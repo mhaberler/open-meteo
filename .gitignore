@@ -13,3 +13,5 @@ data_run/
 data_spatial/
 .cache
 .venv
+dem-90m
+
