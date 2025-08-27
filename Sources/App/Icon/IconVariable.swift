@@ -113,6 +113,9 @@ enum IconSurfaceVariable: String, CaseIterable, GenericVariableMixable, Sendable
     case wind_v_component_180m
     case wind_u_component_180m
 
+    case wind_u_component_5500m
+    case wind_v_component_5500m
+
     case temperature_80m
     case temperature_120m
     case temperature_180m
@@ -202,6 +205,7 @@ enum IconSurfaceVariable: String, CaseIterable, GenericVariableMixable, Sendable
         case .wind_u_component_80m, .wind_v_component_80m: return true
         case .wind_u_component_120m, .wind_v_component_120m: return true
         case .wind_u_component_180m, .wind_v_component_180m: return true
+        case .wind_u_component_5500m, .wind_v_component_5500m: return true
         case .weather_code: return true
         default: return false
         }
@@ -226,6 +230,8 @@ enum IconSurfaceVariable: String, CaseIterable, GenericVariableMixable, Sendable
         case .wind_u_component_120m: return 10
         case .wind_v_component_180m: return 10
         case .wind_u_component_180m: return 10
+        case .wind_v_component_5500m: return 10
+        case .wind_u_component_5500m: return 10
         case .soil_temperature_0cm: return 20
         case .soil_temperature_6cm: return 20
         case .soil_temperature_18cm: return 20
@@ -282,6 +288,8 @@ enum IconSurfaceVariable: String, CaseIterable, GenericVariableMixable, Sendable
         case .wind_u_component_120m: return .metrePerSecond
         case .wind_v_component_180m: return .metrePerSecond
         case .wind_u_component_180m: return .metrePerSecond
+        case .wind_v_component_5500m: return .metrePerSecond
+        case .wind_u_component_5500m: return .metrePerSecond        
         case .soil_temperature_0cm: return .celsius
         case .soil_temperature_6cm: return .celsius
         case .soil_temperature_18cm: return .celsius
@@ -365,6 +373,10 @@ enum IconSurfaceVariable: String, CaseIterable, GenericVariableMixable, Sendable
         case .wind_v_component_180m:
             return .hermite(bounds: nil)
         case .wind_u_component_180m:
+            return .hermite(bounds: nil)
+        case .wind_v_component_5500m:
+            return .hermite(bounds: nil)
+        case .wind_u_component_5500m:
             return .hermite(bounds: nil)
         case .temperature_80m:
             return .hermite(bounds: nil)

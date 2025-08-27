@@ -81,6 +81,10 @@ enum IconSurfaceVariableDerived: String, CaseIterable, GenericVariableMixable {
     case wind_direction_180m
     case wind_speed_200m
     case wind_direction_200m
+    case wind_speed_5500m
+    case windspeed_5500m
+    case wind_direction_5500m
+    case winddirection_5500m
     case direct_normal_irradiance
     case evapotranspiration
     case et0_fao_evapotranspiration
