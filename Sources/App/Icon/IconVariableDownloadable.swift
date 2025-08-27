@@ -146,6 +146,8 @@ extension IconSurfaceVariable: IconVariableDownloadable {
         case .wind_v_component_120m: return ("v", "model-level", domain.numberOfModelFullLevels - 3)
         case .wind_u_component_180m: return ("u", "model-level", domain.numberOfModelFullLevels - 4)
         case .wind_v_component_180m: return ("v", "model-level", domain.numberOfModelFullLevels - 4)
+        case .wind_u_component_5500m: return ("u", "model-level", domain.numberOfModelFullLevels - 37)
+        case .wind_v_component_5500m: return ("v", "model-level", domain.numberOfModelFullLevels - 37)
         case .temperature_80m: return ("t", "model-level", domain.numberOfModelFullLevels - 2)
         case .temperature_120m: return ("t", "model-level", domain.numberOfModelFullLevels - 3)
         case .temperature_180m: return ("t", "model-level", domain.numberOfModelFullLevels - 4)

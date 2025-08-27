@@ -310,6 +310,9 @@ struct IconReader: GenericReaderDerived, GenericReaderProtocol {
             case .wind_speed_180m, .windspeed_180m, .wind_direction_180m, .winddirection_180m:
                 try await prefetchData(raw: .wind_u_component_180m, time: time)
                 try await prefetchData(raw: .wind_v_component_180m, time: time)
+            case .wind_speed_5500m, .windspeed_5500m, .wind_direction_5500m, .winddirection_5500m:
+                try await prefetchData(raw: .wind_u_component_5500m, time: time)
+                try await prefetchData(raw: .wind_v_component_5500m, time: time)
             case .snow_height:
                 try await prefetchData(raw: .snow_depth, time: time)
             case .shortwave_radiation:
@@ -454,6 +457,16 @@ struct IconReader: GenericReaderDerived, GenericReaderProtocol {
                 let v = try await get(raw: .wind_v_component_180m, time: time).data
                 let direction = Meteorology.windirectionFast(u: u, v: v)
                 return DataAndUnit(direction, .degreeDirection)
+            case .wind_speed_5500m, .windspeed_5500m:
+                let u = try await get(raw: .wind_u_component_5500m, time: time).data
+                let v = try await get(raw: .wind_v_component_5500m, time: time).data
+                let speed = zip(u, v).map(Meteorology.windspeed)
+                return DataAndUnit(speed, .metrePerSecond)
+            case .wind_direction_5500m, .winddirection_5500m:
+                let u = try await get(raw: .wind_u_component_5500m, time: time).data
+                let v = try await get(raw: .wind_v_component_5500m, time: time).data
+                let direction = Meteorology.windirectionFast(u: u, v: v)
+                return DataAndUnit(direction, .degreeDirection)                
             case .snow_height:
                 return try await get(raw: .snow_depth, time: time)
             case .apparent_temperature:
