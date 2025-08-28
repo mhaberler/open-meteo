@@ -146,8 +146,28 @@ extension IconSurfaceVariable: IconVariableDownloadable {
         case .wind_v_component_120m: return ("v", "model-level", domain.numberOfModelFullLevels - 3)
         case .wind_u_component_180m: return ("u", "model-level", domain.numberOfModelFullLevels - 4)
         case .wind_v_component_180m: return ("v", "model-level", domain.numberOfModelFullLevels - 4)
-        case .wind_u_component_5500m: return ("u", "model-level", domain.numberOfModelFullLevels - 37)
-        case .wind_v_component_5500m: return ("v", "model-level", domain.numberOfModelFullLevels - 37)
+        case .wind_u_component_5500m: 
+            if domain == .iconD2 {
+                return ("u", "model-level", domain.numberOfModelFullLevels - 39)  // use 5686m, index 27 -> 66-27
+            }
+            if domain == .iconEu  {
+                return ("u", "model-level", domain.numberOfModelFullLevels - 28)  // use 5683m, index 46 -> 74-46
+            }
+            if domain == .icon  {
+                return ("u", "model-level", domain.numberOfModelFullLevels - 28)  // use 5686m, index 92 -> 120-92
+            }
+            return nil
+        case .wind_v_component_5500m: 
+            if domain == .iconD2 {
+                return ("v", "model-level", domain.numberOfModelFullLevels - 39)
+            }
+            if domain == .iconEu  {
+                return ("v", "model-level", domain.numberOfModelFullLevels - 28)
+            }
+            if domain == .icon  {
+                return ("v", "model-level", domain.numberOfModelFullLevels - 28)
+            }
+            return nil        
         case .temperature_80m: return ("t", "model-level", domain.numberOfModelFullLevels - 2)
         case .temperature_120m: return ("t", "model-level", domain.numberOfModelFullLevels - 3)
         case .temperature_180m: return ("t", "model-level", domain.numberOfModelFullLevels - 4)
