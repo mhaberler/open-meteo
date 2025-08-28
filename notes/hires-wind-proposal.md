@@ -18,15 +18,17 @@
 - we believe the most relevant vertical range is surface to flight level 180 which translates into something like 30 model levels in the Icon family. 
 - as the use case is very short term focused, there is not much value in extended forecasting beyond several hours. 
 - just providing wind U and V values covers many usage scenarios 
+- temperature T and humidity RH would be useful
 
 ## ballpark calculation of download size:
 
 - assume 30 model levels from ICOND2/ICON-EU or ICON Global define a relevant vertical range
-- each level needs the wind U and V variables
+- each level needs the wind U and V variables, ideally also temperature T and humidity RH  variables
 - assume a forecast loookahead of eight hours. 
-- this translates into 30x2x8 = 480 files per forecast run (every three hours assuming Icon-D2) which looks like a managable amount of data
+- this translates into 30x2x8 = 480 files per forecast run (960 including T and RH; every three hours assuming Icon-D2) which looks like a managable amount of data
 - Looking at the ICOND2 pressure level download, this looks like 55 variables per hour; for 48 hours this would be 2640 files to dowload
 - same filecount assumed for a hires u/v download would yield some 44 hours (2640/60) so comparable effort
+- if using T and RH variables double effort but still 22 hours lookahead compared to pressure levels
 
 ## scope:
 
