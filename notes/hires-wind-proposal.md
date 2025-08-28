@@ -5,6 +5,7 @@
 
 - last check before a flight/jump
 - nowcasting and short term  trajectory forecasting during flight
+- precise vertical profiles
 - project contexts: trajectory forecasting for ballooning (https://github.com/open-meteo/open-meteo/discussions/1298), skydive planning (https://github.com/wetterheidi/upper_winds_open_meteo)
 
 ## observations:
@@ -12,28 +13,29 @@
 - pressure levels are coarse 
 - the Icon family of models provides very dense vertical forecasts through model levels (about 3-4 times higher vertical resolution over pressure levels). 
 - we are not aware of any projects or API services providing vertical wind data based on Icon model levels. 
-- we believe a model-level short-term vertical forecast could be an interesting USP for open meteo.
+- we believe a model-level short-term vertical forecast could be an interesting USP for open-meteo.
 - vertical profiles using all available model levels is computationally expensive and probably not feasible for extended forecast periods. 
 - using a subset of vertical levels and a reduced forecast period might make the effort feasible even within the DWD data playout structure. 
 - we believe the most relevant vertical range is surface to flight level 180 which translates into something like 30 model levels in the Icon family. 
 - as the use case is very short term focused, there is not much value in extended forecasting beyond several hours. 
 - just providing wind U and V values covers many usage scenarios 
-- temperature T and humidity RH would be useful
+- temperature T and humidity RH would be useful as would be pressure and geopotential height
 
-## ballpark calculation of download size:
+## ballpark estimate of download size:
 
-- assume 30 model levels from ICOND2/ICON-EU or ICON Global define a relevant vertical range
-- each level needs the wind U and V variables, ideally also temperature T and humidity RH  variables
+- assume 30 model levels from Icon-D2/Icon-EU or Icon Global define a relevant vertical range
+- each level needs the wind U and V variables, ideally also temperature, relative humidity, pressure and geopotential height
 - assume a forecast loookahead of eight hours. 
 - this translates into 30x2x8 = 480 files per forecast run (960 including T and RH; every three hours assuming Icon-D2) which looks like a managable amount of data
-- Looking at the ICOND2 pressure level download, this looks like 55 variables per hour; for 48 hours this would be 2640 files to dowload
+- Looking at the Icon-D2 pressure level download, this looks like 55 variables per hour; for 48 hours this would be 2640 files to dowload
 - same filecount assumed for a hires u/v download would yield some 44 hours (2640/60) so comparable effort
 - if using T and RH variables double effort but still 22 hours lookahead compared to pressure levels
+- if pressure and geopotential height added, stil about 14 hours for pressure level effort
 
 ## scope:
 
-- we would restrict to just addressing the ICON family of models (which might include variants thereof, like the Swiss icon model. )
-- We will start with ICON D2 and possibly expand to ICON EU and ICON Global if there is demand. 
+- we would restrict to just addressing the Icon family of models (which might include variants thereof, like the Swiss icon model. )
+- We will start with Icon-D2 and possibly expand to Icon-EU and Icon Global if there is demand. 
 - Any additions resulting from this effort should not impact existing installations in any shape or form.
 
 ## preliminary work:
@@ -48,7 +50,7 @@
 - I would take on this task if there is a chance of the result being merged back.
 - some of the work could be scripted to reduce manual editing, once the naming questions below are resolved. 
 - I would take on the development of this feature. However, I need guidance and a bit of help in a few following areas:
-    - Variable naming: I'm unsure if encoding the altitude in the level name (eg windspeed_5500m) is the right way to go or if we should retain the level number (windspeed_level27) and provide a model-specific lookup mechanism to translate level into an altitude. Since the level height of ICON Global and EU versus ICON D2 are not identical, using the height in the name would be cause a major increase  of layer names whose heights do not match across models. 
+    - Variable naming: I'm unsure if encoding the altitude in the level name (eg windspeed_5500m) is the right way to go or if we should retain the level number (windspeed_level27) and provide a model-specific lookup mechanism to translate level into an altitude. Since the level height of Icon Global and EU versus Icon D2 are not identical, using the height in the name would be cause a major increase  of layer names whose heights do not match across models. 
     - To avoid impact on existing installations, this variable set should be a separate download option, similar to the model levels or surface groups. 
     - I'd be looking for advice how to best structure this variable set, and how to control the download via a command line group argument. . For instance, adding an IconLevelVariableType, or a new 'realm'?
     - Currently the number of forecast hours is fixed per model. To limit the look-ahead time span, this must be made a command line argument, or at least configurable in some way.
