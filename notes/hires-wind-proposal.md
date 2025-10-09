@@ -140,5 +140,6 @@ https://api.openmeteo.mah.priv.at//v1/forecast?latitude=47&longitude=15&hourly=w
 ## download commmands used:
 
 /usr/local/bin/openmeteo-api download icon-d2 --group surface
+
 /usr/local/bin/openmeteo-api download icon-d2 --group pressureLevel
 
