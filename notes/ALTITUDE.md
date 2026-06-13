@@ -102,7 +102,14 @@ full-level height AGL at x (level i):
 
 Upper levels (roughly above the 16 km transition) are nearly identical to the standard table. Lower levels are compressed over orography; the "surface" in the model is always the local model topography + a small offset for the lowest layer.
 
-**Note on open-meteo data layout**: Currently only `HSURF` (as elevation) is materialised into the static `.om` files. Full per-level `HHL` is not stored. For exact altitudes you must obtain the HHL stack from the original DWD GRIBs (or add it to the download pipeline).
+**Note on open-meteo data layout**: As of 2026-06, `HHL` is ingested by the download pipeline
+(`convertHhlHeights` in `DownloadIconCommand.swift`) and stored alongside `HSURF` as a single 3D
+static file `<domain>/static/hhl.om` with dimensions `[ny, nx, nHalfLevels]` (half-level dimension
+last, raw ASL metres, no sea mask). Verified for `icon` (121 levels), `icon-eu` (75) and `icon-d2`
+(66). Per-location vertical columns are read in one I/O via `Gridable.readColumnFromStaticFile`, and
+`IconReader.fullLevelHeightASL/AGL` derive full-level geometric heights by averaging adjacent halves.
+There is not yet an HTTP variable exposing these (e.g. `height_levelN`) — that is gated on the
+model-level (`_levelN`) variable rollout. See `notes/plan-hhl-ingest-and-serve.md`.
 
 ## Representative Standard Full-Level Heights (m AGL, zero topography)
 
