@@ -169,6 +169,64 @@ DWD URLs follow the hsurf/ pattern but under hhl/ + per-level suffix instead of 
    - DomainRegistry / data dirs: new files under existing static/ will be picked up by sync/cron.
    - Performance: negligible (lazy single-column read once per point on first height request; heights constant so cheap fill).
 
+## Implementation Status (as of 2026-06-14)
+
+HHL ingestion, the reader helpers, and `height_levelN` serving over JSON/CSV are **implemented and verified end-to-end**. The sections below this one are the original design; this section is the source of truth for what actually landed and what remains.
+
+### Commits (branch `hhl-ingest`)
+
+| Commit | Summary |
+|--------|---------|
+| `eddde0e` | feat: ingest HHL as single 3D static `hhl.om` + lazy column / full-level height helpers (initial implementation) |
+| `011f3fc1` | fix: d2 HHL uses `regular-lat-lon`, not the forced `icosahedral` (no remap weights for d2 → `Array2D` precondition crash) |
+| `df471489` | fix: write `hhl.om` with 32-bit `.pfor_delta2d` — `.pfor_delta2d_int16` capped at 32767 m, so global levels 1–34 (33 k–75 k m) became NaN |
+| `c0a5bace` | test: network-free regression for the 3D column read + level averaging (`Tests/AppTests/IconHhlTests.swift`) |
+| `b51ade2e` | docs: ALTITUDE.md updated to "HHL ingested" |
+| `33ec3f5e` | feat: Icon model-level variable category — `IconModelLevelVariable`, `IconVariable` → 3-arm sum, `IconReader` computes height from HHL |
+| `6e5486b1` | feat: generic `ForecastVariable` model-level arm → `height_levelN` queryable over JSON/CSV |
+
+### What works (verified live, run `2026061300`)
+
+- **Ingestion**: `convertHhlHeights` (`DownloadIconCommand.swift`) runs after `convertSurfaceElevation`. Loops per-level GRIBs from `/hhl/`, stacks to one 3D `[ny, nx, nlev]` `hhl.om` (level-last), chunk `[chunkY, chunkX, nlev]` (full column per chunk), compression `.pfor_delta2d`, no sea mask. Idempotent on `hhl.om`.
+  - On disk + dimension-verified: `icon-d2` `[746,1215,66]` (12.4 MB), `icon-eu` `[657,1377,75]` (15.2 MB), `icon` global `[1441,2879,121]` (44.8 MB). All NaN-free; tops match the DWD standard table (d2 22000 m, eu 22770 m, global 75000 m).
+- **Reader**: `Gridable.readColumnFromStaticFile` (one-I/O column), lazy `IconReader.hhlColumnASL()`, `fullLevelHeightASL/AGL(fullLevel:)` (PDF averaging). Unit-tested.
+- **API (JSON/CSV)**: `height_levelN` (ASL) and `height_agl_levelN` (AGL) on `/v1/forecast`, level = DWD-native full-level index (1 = top). Values cross-checked vs standard table:
+  - `icon_d2` Munich: `height_level1` = 20701 m, `height_level65` = 541 m, `height_agl_level65` = **10.0 m** (exact std match).
+  - `icon_global` Munich: `height_level1` = **74210.5 m** (std 74210.3).
+  - Existing height-metre (`wind_speed_180m`) and pressure (`temperature_850hPa`) variables still parse — unaffected.
+
+### Architecture as built (deviations from the original design below)
+
+- **Generic layer was the real gate**, not Icon. `/v1/forecast` parses requests into the shared generic `ForecastVariable` (used by all models + FlatBuffers + aggregation) before any model is consulted; it had no model-level concept. Dispatch is purely by `rawValue` (`reader.get(mixed: rawValue)` → `Reader.variableFromString`), so the fix only needed the generic type to **parse + round-trip** `_levelN`.
+- **3-arm height slot is now an enum**: `ForecastVariable`'s height arm changed from `ForecastHeightVariable` (struct) to `ForecastHeightOrModelLevelVariable = { height(ForecastHeightVariable) | modelLevel(ForecastModelLevelVariable) }`. The existing height-metre struct and its parsing are **unchanged** (tried as fallback after the unambiguous `_levelN`). New reusable `ModelLevelVariableRespresentable` protocol parses `<var>_level<N>` (`PressureVariableRespresentable.swift`).
+- **Icon `IconVariable`** is now the 3-arm `SurfacePressureAndHeightVariable<Surface, Pressure, IconModelLevelVariable>` (mirrors UKMO/MeteoSwiss). `IconReader.get(raw:)`/`prefetchData(raw:)` intercept the `.height` (model-level) arm: compute constant series from HHL, nothing to download/prefetch.
+- **Height vars are not stored or downloaded** — purely computed from the static `hhl.om`. `getVarAndLevel` → nil; `omFileName` is a never-read placeholder.
+
+## What remains to be done
+
+### Serving completeness (deferred by the "JSON/CSV only" decision)
+
+- **FlatBuffers meta** for model levels is a placeholder (`ForecastHeightOrModelLevelVariable.getFlatBuffersMeta` returns `.geopotentialHeight` with no altitude). Needs a real model-level meta (variable + level index) in `FlatBufferVariable.swift` / the SDK enum, or the binary `.fbs` output mislabels `height_levelN`.
+- **Daily / weekly / monthly aggregation** of model-level vars is not wired (the `ForecastVariableDaily` path). Low priority — height is constant, so aggregation is trivial but currently absent.
+
+### Correctness / polish
+
+- **Global `height_agl_levelN` precision**: global `height_agl_level120` returned 0.0 (expected ≈10 m). ASL is exact; AGL = full-level-ASL − HSURF, and global `HSURF.om` is remapped/masked independently from `hhl.om`, so the lowest level can round to 0. d2 AGL is exact (10.0) with identical code → global-grid artifact. **Action**: compare global `hhl.om` surface half-level (121) vs `HSURF.om` at several land points; decide whether AGL should subtract the HHL surface half-level instead of `HSURF` for self-consistency.
+- **Out-of-range level**: `height_level999` returns NaN (helper returns nil → `.nan`). Acceptable, but consider rejecting at parse with a clear error.
+- **Sea points**: `fullLevelHeightAGL` returns ASL when `modelElevation` is sea/no-data. Confirm desired behaviour (0 vs ASL) and test.
+- **`Array2D` precondition crash** on a grid/count mismatch is a bare `precondition` in shared `downloadAndRemap`; a friendly `HHL grid mismatch for <domain>` error would aid future domain onboarding. (Mitigated now by correct `gridType`.)
+
+### Coverage / ops
+
+- **EPS + d2-15min domains**: `numberOfModelHalfLevels` is defined for all, and EU/global/d2 are verified, but the EPS variants (`icon-eps`, `icon-eu-eps`, `icon-d2-eps`) are not run-tested — confirm DWD publishes HHL for them and the casing branch is right.
+- **Remote (`REMOTE_DATA_DIRECTORY`/S3)**: column read via `RemoteFileManager` block cache is untested for `hhl.om`; verify a pure API server fetches it on demand. Document the static-prep step in `cronjobs.md`.
+- **Export / sync**: confirm static-sync picks up the single `hhl.om` (no per-level glob assumptions).
+- **ADR**: `docs/adr/0001-icon-model-level-naming.md` is an empty placeholder — record the `height_levelN` / ASL-default / DWD-native-indexing naming decision (optionally a new `0002` for HHL storage).
+
+### Future (out of scope here, enabled by this work)
+
+- Native model-level data variables (`temperature_levelN`, `wind_speed_levelN`, …) now have a home: add cases to `IconModelLevelVariableType` + `ForecastModelLevelVariableType` and download/store the model-level GRIBs (the `modelLevel` download group already exists). `height_levelN` pairs with them directly.
+
 ## Implementation Phases (decoupled)
 
 **Critical**: Phase 3 (general `height_levelN` for arbitrary model levels) is gated on the unfinished `_levelN` / ModelLevelVariableRespresentable work from the prior plan (still sees legacy 80m/5500m hacks in current `IconVariableDownloadable.swift`). Phases 1+2 are fully independent and can ship HHL data + queryable heights today.
