@@ -717,6 +717,12 @@ extension ForecastHeightOrModelLevelVariable: FlatBuffersVariable {
                 return .init(variable: .relativeHumidity)
             case .pressure:
                 return .init(variable: .surfacePressure)
+            case .wind_speed:
+                return .init(variable: .windSpeed)
+            case .wind_direction:
+                return .init(variable: .windDirection)
+            case .dew_point:
+                return .init(variable: .dewPoint)
             }
         }
     }
@@ -739,6 +745,12 @@ extension IconModelLevelVariable: FlatBuffersVariable {
             return .init(variable: .relativeHumidity)
         case .pressure:
             return .init(variable: .surfacePressure)
+        case .wind_speed:
+            return .init(variable: .windSpeed)
+        case .wind_direction:
+            return .init(variable: .windDirection)
+        case .dew_point:
+            return .init(variable: .dewPoint)
         }
     }
 }
