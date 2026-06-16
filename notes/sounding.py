@@ -1,12 +1,21 @@
 #!/usr/bin/env python3
 """Full ICON-D2 native model-level sounding from local open-meteo (port 8085).
 Reformat like the Stiwoll table: h(mAGL) p(hPa) T(C) Dew(C) Dir(deg) Spd(m/s) RH(%)."""
-import json, urllib.parse, urllib.request
+import json, time, urllib.parse, urllib.request
 
 BASE = "http://127.0.0.1:8085/v1/forecast"
+META = "/var/lib/openmeteo-api/data/dwd_icon_d2/static/meta.json"
 LAT, LON = 47.105, 15.215          # Stiwoll Heidi Startplatz
 LEVELS = range(1, 66)              # ICON-D2: 65 native full levels (65=surface,1=top)
 TARGET = "2026-06-16T00:00"
+
+# Last ICON-D2 model run + forecast end (read from the domain meta.json).
+def _utc(ts):
+    return time.strftime("%Y-%m-%dT%H:%MZ", time.gmtime(ts))
+with open(META) as f:
+    _m = json.load(f)
+RUN_INIT = _utc(_m["last_run_initialisation_time"])   # e.g. 2026-06-15T09:00Z
+FCST_END = _utc(_m["data_end_time"])                  # e.g. 2026-06-17T10:00Z
 
 # Dew(C), Dir(deg), Spd(m/s) now come straight from the server-side derived
 # model-level vars dew_point/wind_direction/wind_speed (no client-side math).
@@ -45,6 +54,7 @@ for n in LEVELS:
     rows.append((h-elev, p, T, td, dr, spd, rh))
 
 rows.sort(key=lambda r: r[0])      # surface -> top
+print(f"# run {RUN_INIT} (init), forecast to {FCST_END}")
 print(f"# {TARGET}Z  ICON-D2 native levels  Stiwoll ({LAT},{LON}) elev={elev:.0f}m")
 print("h(mAGL) p(hPa) T(C) Dew(C) Dir(°) Spd(m/s) RH(%)")
 for h,p,T,td,dr,sp,rh in rows:
