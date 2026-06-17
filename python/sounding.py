@@ -3,11 +3,9 @@
 Reformat like the Stiwoll table: h(mAGL) p(hPa) T(C) Dew(C) Dir(deg) Spd(m/s) RH(%)."""
 import json, time, urllib.parse, urllib.request
 
-BASE = "http://127.0.0.1:8085/v1/forecast"
-BASE = "http://10.100.100.197:8085/v1/forecast"
 BASE = "https://open-meteo.mah.priv.at/v1/forecast"
-META = "/var/lib/openmeteo-api/data/dwd_icon_d2/static/meta.json"
-LAT, LON = 47.105, 15.215          # Stiwoll Heidi Startplatz
+META = "https://open-meteo.mah.priv.at/data/dwd_icon_d2/static/meta.json"
+# LAT, LON = 47.105, 15.215          # Stiwoll Heidi Startplatz
 
 # Hab' jetzt mal den 03Z Lauf heute für VHZ 18 Z heute von der Position 
 # 48.717° N 8.750°E
@@ -16,12 +14,12 @@ LAT, LON = 47.105, 15.215          # Stiwoll Heidi Startplatz
 LAT, LON =48.717, 8.750
 
 LEVELS = range(1, 66)              # ICON-D2: 65 native full levels (65=surface,1=top)
-TARGET = "2026-06-17T06:00"
+TARGET = "2026-06-17T18:00"
 
 # Last ICON-D2 model run + forecast end (read from the domain meta.json).
 def _utc(ts):
     return time.strftime("%Y-%m-%dT%H:%MZ", time.gmtime(ts))
-with open(META) as f:
+with urllib.request.urlopen(META, timeout=30) as f:
     _m = json.load(f)
 RUN_INIT = _utc(_m["last_run_initialisation_time"])   # e.g. 2026-06-15T09:00Z
 FCST_END = _utc(_m["data_end_time"])                  # e.g. 2026-06-17T10:00Z
@@ -40,9 +38,9 @@ query = {
     "models": "icon_d2",
     "wind_speed_unit": "ms",
     "timezone": "GMT",
-    # "start_date": "2026-06-16", "end_date": "2026-06-16",
+    # "start_date": "2026-06-17T18:00", "end_date": "2026-06-17T18:00",
 }
-print(query)
+# print(query)
 q = urllib.parse.urlencode(query)
 with urllib.request.urlopen(f"{BASE}?{q}", timeout=120) as r:
     d = json.load(r)
@@ -66,7 +64,7 @@ for n in LEVELS:
 
 rows.sort(key=lambda r: r[0])      # surface -> top
 print(f"# run {RUN_INIT} (init), forecast to {FCST_END}")
-print(f"# {TARGET}Z  ICON-D2 native levels  Stiwoll ({LAT},{LON}) elev={elev:.0f}m")
+print(f"# {TARGET}Z  ICON-D2 native levels  location: ({LAT},{LON}) elev={elev:.0f}m")
 print("h(mAGL) p(hPa) T(C) Dew(C) Dir(°) Spd(m/s) RH(%)")
 for h,p,T,td,dr,sp,rh in rows:
     print(f"{h:.0f} {p:.1f} {T:.1f} {td:.1f} {dr:.0f} {sp:.1f} {rh:.0f}")
