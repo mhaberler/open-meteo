@@ -4,10 +4,19 @@ Reformat like the Stiwoll table: h(mAGL) p(hPa) T(C) Dew(C) Dir(deg) Spd(m/s) RH
 import json, time, urllib.parse, urllib.request
 
 BASE = "http://127.0.0.1:8085/v1/forecast"
+BASE = "http://10.100.100.197:8085/v1/forecast"
+BASE = "https://open-meteo.mah.priv.at/v1/forecast"
 META = "/var/lib/openmeteo-api/data/dwd_icon_d2/static/meta.json"
 LAT, LON = 47.105, 15.215          # Stiwoll Heidi Startplatz
+
+# Hab' jetzt mal den 03Z Lauf heute für VHZ 18 Z heute von der Position 
+# 48.717° N 8.750°E
+# gespeichert.
+# Mit dem werde ich mich nachher spielen
+LAT, LON =48.717, 8.750
+
 LEVELS = range(1, 66)              # ICON-D2: 65 native full levels (65=surface,1=top)
-TARGET = "2026-06-16T00:00"
+TARGET = "2026-06-17T06:00"
 
 # Last ICON-D2 model run + forecast end (read from the domain meta.json).
 def _utc(ts):
@@ -25,14 +34,16 @@ for n in LEVELS:
              f"relative_humidity_level{n}", f"dew_point_level{n}",
              f"wind_speed_level{n}", f"wind_direction_level{n}"]
 
-q = urllib.parse.urlencode({
+query = {
     "latitude": LAT, "longitude": LON,
     "hourly": ",".join(vars),
     "models": "icon_d2",
     "wind_speed_unit": "ms",
     "timezone": "GMT",
-    "start_date": "2026-06-16", "end_date": "2026-06-16",
-})
+    # "start_date": "2026-06-16", "end_date": "2026-06-16",
+}
+print(query)
+q = urllib.parse.urlencode(query)
 with urllib.request.urlopen(f"{BASE}?{q}", timeout=120) as r:
     d = json.load(r)
 
