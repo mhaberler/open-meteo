@@ -43,6 +43,7 @@ skew.ax.set_ylabel('Druck (hPa)')
 title_txt = fig.suptitle("", fontsize=13, fontweight='bold', y=0.99)
 sub_txt = fig.text(0.5, 0.945, "", ha='center', fontsize=9, color=note_color)
 dynamic = []                          # per-hour artists, removed before each redraw
+CAPE_SRC = 'model'                    # which profile drives parcel + CAPE/CIN shading
 
 
 def _q(seq, unit):
@@ -57,46 +58,59 @@ def draw(i):
         a.remove()
     dynamic.clear()
 
-    # pressure-level reference (solid)
+    # draw both profiles' T/Td and stash arrays for the parcel calc
+    arr = {}                          # 'pressure'/'model' -> (p, T, Td) with units
     if ref['p']:
         p = _q(ref['p'], units.hPa)
         dynamic.extend(skew.plot(p, _q(ref['T'], units.degC),   'r', linewidth=2, label='T (pressure)'))
         dynamic.extend(skew.plot(p, _q(ref['Dew'], units.degC), 'g', linewidth=2, label='Td (pressure)'))
-
-    # model levels (dashed) + barbs + parcel/CAPE/CIN
-    cape = cin = None
+        arr['pressure'] = (p, _q(ref['T'], units.degC), _q(ref['Dew'], units.degC))
     if ml['p']:
-        pm  = _q(ml['p'], units.hPa)
-        Tm  = _q(ml['T'], units.degC)
-        Tdm = _q(ml['Dew'], units.degC)
-        dynamic.extend(skew.plot(pm, Tm,  color='darkred',  linestyle='--', linewidth=1.5, label='T (model)'))
-        dynamic.extend(skew.plot(pm, Tdm, color='darkblue', linestyle='--', linewidth=1.5, label='Td (model)'))
-
+        pm = _q(ml['p'], units.hPa)
+        dynamic.extend(skew.plot(pm, _q(ml['T'], units.degC),   color='darkred',  linestyle='--', linewidth=1.5, label='T (model)'))
+        dynamic.extend(skew.plot(pm, _q(ml['Dew'], units.degC), color='darkblue', linestyle='--', linewidth=1.5, label='Td (model)'))
+        arr['model'] = (pm, _q(ml['T'], units.degC), _q(ml['Dew'], units.degC))
+        # wind barbs always from the (denser) model levels
         u, v = mpcalc.wind_components(_q(ml['Spd'], units('m/s')), _q(ml['Dir'], units.deg))
         k = max(1, len(pm) // 25)
         dynamic.append(skew.plot_barbs(pm[::k], u[::k].to('knots'), v[::k].to('knots')))
 
+    # CAPE/CIN for BOTH profiles (reported in title)
+    cc = {}
+    for src, (P, T, Td) in arr.items():
         try:
-            prof = mpcalc.parcel_profile(pm, Tm[0], Tdm[0]).to('degC')
-            dynamic.extend(skew.plot(pm, prof, 'k', linewidth=1.6, label='parcel (model)'))
-            dynamic.append(skew.shade_cin(pm, Tm, prof, Tdm))
-            dynamic.append(skew.shade_cape(pm, Tm, prof))
-            lcl_p, lcl_t = mpcalc.lcl(pm[0], Tm[0], Tdm[0])
+            pr = mpcalc.parcel_profile(P, T[0], Td[0]).to('degC')
+            cc[src] = mpcalc.cape_cin(P, T, Td, pr)
+        except Exception:
+            cc[src] = None
+
+    # parcel ascent + LCL + red/blue shading for the SELECTED source only
+    sel = CAPE_SRC if CAPE_SRC in arr else (next(iter(arr), None))
+    if sel:
+        P, T, Td = arr[sel]
+        try:
+            pr = mpcalc.parcel_profile(P, T[0], Td[0]).to('degC')
+            dynamic.extend(skew.plot(P, pr, 'k', linewidth=1.6, label=f'parcel ({sel})'))
+            dynamic.append(skew.shade_cin(P, T, pr, Td, facecolor='tab:blue', alpha=0.3))
+            dynamic.append(skew.shade_cape(P, T, pr, facecolor='tab:red', alpha=0.3))
+            lcl_p, lcl_t = mpcalc.lcl(P[0], T[0], Td[0])
             dynamic.extend(skew.plot(lcl_p, lcl_t, 'ko', markerfacecolor='black'))
             dynamic.append(skew.ax.text(0.02, lcl_p.m, ' LCL', va='center', fontsize=8,
                                         transform=skew.ax.get_yaxis_transform()))
-            cape, cin = mpcalc.cape_cin(pm, Tm, Tdm, prof)
         except Exception as e:        # short/degenerate profile, etc.
             dynamic.append(skew.ax.text(0.02, 0.02, f'parcel calc failed: {e}', fontsize=8,
                                         color='red', transform=skew.ax.transAxes))
 
     dynamic.append(skew.ax.legend(loc='upper right', fontsize='small'))
 
-    cc = (f'CAPE {cape.m:.0f} / CIN {cin.m:.0f} J/kg'
-          if cape is not None else 'CAPE/CIN n/a')
+    def _fmt(src):
+        v = cc.get(src)
+        tag = '◀shaded' if src == sel else ''
+        return (f'{src} CAPE {v[0].m:.0f}/CIN {v[1].m:.0f}{tag}'
+                if v is not None else f'{src} n/a')
     title_txt.set_text(
         f'ICON-D2 Skew-T  pressure (solid) vs model (dashed) @ ({LAT},{LON})\n'
-        f'{t}Z   [{i + 1}/{len(times)}]   model {cc}')
+        f'{t}Z  [{i + 1}/{len(times)}]   ' + '   '.join(_fmt(s) for s in ('model', 'pressure')))
     sub_txt.set_text(
         f'pressure run {data.run_press} (public) | model run {data.run_model} (private) '
         f'[{data.run_note}]   ref={len(ref["p"])} p-levels, model={len(ml["p"])} levels')
@@ -115,6 +129,19 @@ b_prev = mwidgets.Button(ax_prev, '◀ Prev')
 b_next = mwidgets.Button(ax_next, 'Next ▶')
 b_prev.on_clicked(lambda _evt: step(-1))
 b_next.on_clicked(lambda _evt: step(+1))
+
+# CAPE/CIN source switch (model <-> pressure); drives parcel + red/blue shading
+ax_src = fig.add_axes([0.66, 0.015, 0.13, 0.07])
+ax_src.set_title('CAPE/CIN from', fontsize=8)
+radio = mwidgets.RadioButtons(ax_src, ('model', 'pressure'),
+                              active=('model', 'pressure').index(CAPE_SRC))
+
+
+def on_src(label):
+    global CAPE_SRC
+    CAPE_SRC = label
+    draw(idx)
+radio.on_clicked(on_src)
 
 
 def on_key(evt):
