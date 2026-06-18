@@ -15,9 +15,10 @@ import metpy.calc as mpcalc
 from metpy.plots import SkewT
 from metpy.units import units
 
-from sounding_data import load
+from sounding_data import load, geocode
 
 LAT, LON = 46.9911, 15.4396          # LOWG — Graz Airport (Graz-Thalerhof)
+LABEL = "LOWG / Graz"                 # resolved place name (updated via the location box)
 TARGET = "2026-06-17T18:00"
 
 data = load(LAT, LON)
@@ -109,11 +110,12 @@ def draw(i):
         return (f'{src} CAPE {v[0].m:.0f}/CIN {v[1].m:.0f}{tag}'
                 if v is not None else f'{src} n/a')
     title_txt.set_text(
-        f'ICON-D2 Skew-T  pressure (solid) vs model (dashed) @ ({LAT},{LON})\n'
+        f'ICON-D2 Skew-T  pressure (solid) vs model (dashed) @ {LABEL} ({LAT:.3f},{LON:.3f})\n'
         f'{t}Z  [{i + 1}/{len(times)}]   ' + '   '.join(_fmt(s) for s in ('model', 'pressure')))
     sub_txt.set_text(
         f'pressure run {data.run_press} (public) | model run {data.run_model} (private) '
         f'[{data.run_note}]   ref={len(ref["p"])} p-levels, model={len(ml["p"])} levels')
+    sub_txt.set_color(note_color)
     fig.canvas.draw_idle()
 
 
@@ -121,6 +123,27 @@ def step(delta):
     global idx
     idx = max(0, min(len(times) - 1, idx + delta))
     draw(idx)
+
+
+def relocate(lat, lon, label):
+    """Re-fetch profiles for a new location and redraw."""
+    global LAT, LON, LABEL, data, times, profiles, note_color, idx
+    LAT, LON, LABEL = lat, lon, label
+    data = load(lat, lon)
+    times = data.times
+    profiles = data.profiles
+    note_color = 'green' if data.run_note == "same run" else 'red'
+    idx = times.index(TARGET) if TARGET in times else 0
+    draw(idx)
+
+
+def on_submit(name):
+    r = geocode(name)
+    if r:
+        relocate(*r)
+    else:
+        sub_txt.set_text(f"'{name}' not found")
+        fig.canvas.draw_idle()
 
 
 ax_prev = fig.add_axes([0.40, 0.02, 0.08, 0.045])
@@ -142,6 +165,11 @@ def on_src(label):
     CAPE_SRC = label
     draw(idx)
 radio.on_clicked(on_src)
+
+# location picker: type a place name -> geocode -> relocate
+ax_loc = fig.add_axes([0.10, 0.018, 0.20, 0.04])
+tb_loc = mwidgets.TextBox(ax_loc, 'Ort ', initial='Graz')
+tb_loc.on_submit(on_submit)
 
 
 def on_key(evt):
