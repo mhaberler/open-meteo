@@ -17,6 +17,9 @@ This document lists all required cronjobs to download data. However, downloading
 #41 2,5,8,11,14,17,20,23  * * * /usr/local/bin/openmeteo-api download icon-eu --group modelLevel > ~/log/icon-eu_model-level.log 2>&1 || cat ~/log/icon-eu_model-level.log
 #44 0,3,6,9,12,15,18,21 * * * /usr/local/bin/openmeteo-api download icon-d2 --group modelLevel > ~/log/icon-d2_model-level.log 2>&1 || cat ~/log/icon-d2_model-level.log
 
+
+44 0,3,6,9,12,15,18,21 * * * /usr/local/bin/openmeteo-api download icon-d2  --update-meta --group modelLevel > ~/log/icon-d2_model-level.log 2>&1 || cat ~/log/icon-d2_model-level.log
+
 # GFS
 40 3,9,15,21 * * * /usr/local/bin/openmeteo-api download-gfs gfs025 > ~/log/gfs025.log 2>&1 || cat ~/log/gfs025.log
 40 3,9,15,21 * * * /usr/local/bin/openmeteo-api download-gfs gfs013 > ~/log/gfs013.log 2>&1 || cat ~/log/gfs013.log
