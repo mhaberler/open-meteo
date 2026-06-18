@@ -28,8 +28,10 @@ note_color = 'green' if data.run_note == "same run" else 'red'
 
 idx = times.index(TARGET) if TARGET in times else 0
 
-fig = plt.figure(figsize=(11, 11))
-skew = SkewT(fig, rotation=45, rect=(0.07, 0.12, 0.86, 0.78))
+fig = plt.figure(figsize=(13, 11))
+skew = SkewT(fig, rotation=45, rect=(0.06, 0.12, 0.60, 0.78))
+# convective time-series strip (CCL->BL bars per hour), pressure-aligned with the Skew-T
+ax_conv = fig.add_axes((0.74, 0.12, 0.20, 0.78))
 
 # --- static setup (built ONCE; clearing the SkewT axis would destroy its
 #     projection + log-p scale, so we never cla() — only swap dynamic artists) ---
@@ -51,12 +53,85 @@ def _q(seq, unit):
     return np.array(seq, dtype=float) * unit
 
 
+def model_arrays(t):
+    """(p, T, Td) with units for the model-level profile at valid time t, or None."""
+    ml = profiles[t][0]
+    if not ml['p']:
+        return None
+    return (_q(ml['p'], units.hPa), _q(ml['T'], units.degC), _q(ml['Dew'], units.degC))
+
+
+def convective(arrays):
+    """CCL / convective temperature / BL (=EL) + SBCAPE for a model profile.
+
+    Returns dict {ccl_p, tcon, bl_p, cape, triggered} or None when undefined."""
+    if arrays is None:
+        return None
+    P, T, Td = arrays
+    try:
+        ccl_p, _ccl_t, tcon = mpcalc.ccl(P, T, Td)
+        prof_c = mpcalc.parcel_profile(P, tcon, Td[0])
+        bl_p, _ = mpcalc.el(P, T, Td, prof_c)
+        prof_s = mpcalc.parcel_profile(P, T[0], Td[0]).to('degC')
+        cape, cin = mpcalc.cape_cin(P, T, Td, prof_s)
+        if not (np.isfinite(ccl_p.m) and np.isfinite(bl_p.m) and bl_p.m < ccl_p.m):
+            return None
+        # convection expected if there is CAPE AND the surface parcel can reach the
+        # LFC: either the cap is already weak (CIN ~ 0) or surface heating reaches TCON.
+        triggered = cape.m > 100 and (cin.m > -25 or float(T[0].m) >= float(tcon.m))
+        return {'ccl_p': ccl_p.m, 'tcon': tcon.m, 'bl_p': bl_p.m,
+                'cape': cape.m, 'cin': cin.m, 'triggered': triggered}
+    except Exception:
+        return None
+
+
+def _cape_color(cape):
+    return 'gold' if cape < 300 else 'orange' if cape < 1000 else 'red'
+
+
+def draw_strip():
+    """(Re)draw the per-hour CCL->BL convective bars; persists across stepping."""
+    import matplotlib.lines as mlines
+    ax_conv.clear()
+    ax_conv.set_yscale('log')
+    ax_conv.set_ylim(1000, 100)
+    ax_conv.set_xlim(-0.5, len(times) - 0.5)
+    for i, t in enumerate(times):
+        c = conv.get(t)
+        if c and c['triggered']:
+            ax_conv.plot([i, i], [c['ccl_p'], c['bl_p']], lw=3,
+                         color=_cape_color(c['cape']), solid_capstyle='butt')
+    s = max(1, len(times) // 8)
+    ticks = list(range(0, len(times), s))
+    ax_conv.set_xticks(ticks)
+    ax_conv.set_xticklabels([times[j][5:13] for j in ticks], rotation=90, fontsize=7)
+    ax_conv.set_yticklabels([])           # pressure rows already labelled on the Skew-T
+    ax_conv.set_title('convective CCL→BL', fontsize=9)
+    ax_conv.grid(True, axis='x', linestyle=':', alpha=0.4)
+    handles = [mlines.Line2D([], [], color=c, lw=3, label=l) for c, l in
+               (('gold', '<300'), ('orange', '300–1000'), ('red', '>1000'))]
+    ax_conv.legend(handles=handles, fontsize=7, loc='upper right',
+                   title='SBCAPE J/kg', title_fontsize=7)
+
+
+conv = {}                             # valid-time -> convective() dict (or None)
+
+
+def build_convective():
+    global conv
+    conv = {t: convective(model_arrays(t)) for t in times}
+    draw_strip()
+
+
 def draw(i):
     t = times[i]
     ml, ref = profiles[t]
 
     for a in dynamic:                 # drop previous hour's artists
-        a.remove()
+        try:
+            a.remove()
+        except (NotImplementedError, ValueError):
+            pass                      # already gone (e.g. ax_conv was cleared)
     dynamic.clear()
 
     # draw both profiles' T/Td and stash arrays for the parcel calc
@@ -116,6 +191,7 @@ def draw(i):
         f'pressure run {data.run_press} (public) | model run {data.run_model} (private) '
         f'[{data.run_note}]   ref={len(ref["p"])} p-levels, model={len(ml["p"])} levels')
     sub_txt.set_color(note_color)
+    dynamic.append(ax_conv.axvline(i, color='black', lw=1.2, alpha=0.8))   # current hour
     fig.canvas.draw_idle()
 
 
@@ -134,6 +210,7 @@ def relocate(lat, lon, label):
     profiles = data.profiles
     note_color = 'green' if data.run_note == "same run" else 'red'
     idx = times.index(TARGET) if TARGET in times else 0
+    build_convective()
     draw(idx)
 
 
@@ -184,5 +261,6 @@ print(f"# pressure run {data.run_press} (public) | model run {data.run_model} (p
 print(f"# ICON-D2 Skew-T ({LAT},{LON}) elev={data.elev:.0f}m  "
       f"hours: {times[0]}Z .. {times[-1]}Z ({len(times)})")
 
+build_convective()
 draw(idx)
 plt.show()
