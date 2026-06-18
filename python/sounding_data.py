@@ -34,6 +34,22 @@ class Sounding:
     run_note: str
 
 
+def geocode(name, count=1):
+    """Resolve a place name to (lat, lon, label) via the Open-Meteo geocoding API.
+
+    Returns None if there is no match."""
+    q = urllib.parse.urlencode({"name": name, "count": count,
+                                "language": "en", "format": "json"})
+    url = f"https://geocoding-api.open-meteo.com/v1/search?{q}"
+    with urllib.request.urlopen(url, timeout=30) as r:
+        results = json.load(r).get("results")
+    if not results:
+        return None
+    g = results[0]
+    label = ", ".join(str(g[k]) for k in ("name", "admin1", "country_code") if g.get(k))
+    return g["latitude"], g["longitude"], label
+
+
 def _utc(ts):
     return time.strftime("%Y-%m-%dT%H:%MZ", time.gmtime(ts))
 
