@@ -6,7 +6,7 @@ plotted against height-AGL across 5 panels (p, T+Dew, RH, Spd, Dir)."""
 import matplotlib.pyplot as plt
 from sounding_data import load
 
-LAT, LON = 48.717, 8.750
+LAT, LON = 46.9911, 15.4396          # LOWG — Graz Airport (Graz-Thalerhof)
 TARGET = "2026-06-17T18:00"
 
 # --- fetch + build all hours once (shared loader) ---
