@@ -3,111 +3,20 @@
 
 Both profiles are fetched live from open-meteo for the same point/run/time and
 plotted against height-AGL across 5 panels (p, T+Dew, RH, Spd, Dir)."""
-import json, time, urllib.parse, urllib.request
 import matplotlib.pyplot as plt
+from sounding_data import load
 
-BASE_MODEL = "https://open-meteo.mah.priv.at/v1/forecast"   # native model levels
-BASE_PRESS = "https://api.open-meteo.com/v1/forecast"        # pressure levels (public)
-META_MODEL = "https://open-meteo.mah.priv.at/data/dwd_icon_d2/static/meta.json"
-META_PRESS = "https://api.open-meteo.com/data/dwd_icon_d2/static/meta.json"
 LAT, LON = 48.717, 8.750
 TARGET = "2026-06-17T18:00"
 
-# ICON-D2 native pressure levels (Sources/App/Icon/Icon.swift:111)
-PLEVELS = [1000, 975, 950, 850, 700, 600, 500, 400, 300, 250, 200]
-LEVELS = range(1, 66)                # 65 native model full levels
-
-# --- run init per source, from each meta.json ---
-def _utc(ts):
-    return time.strftime("%Y-%m-%dT%H:%MZ", time.gmtime(ts))
-def run_init(meta_url):
-    with urllib.request.urlopen(meta_url, timeout=30) as f:
-        return _utc(json.load(f)["last_run_initialisation_time"])
-RUN_MODEL = run_init(META_MODEL)     # private server (model levels)
-RUN_PRESS = run_init(META_PRESS)     # public api (pressure levels)
-
-# --- two requests: model levels (private) + pressure levels (public) ---
-def fetch(base, hourly):
-    query = {
-        "latitude": LAT, "longitude": LON,
-        "hourly": ",".join(hourly),
-        "models": "icon_d2",
-        "wind_speed_unit": "ms",
-        "timezone": "GMT",
-        "forecast_days": 2,          # full window; step over the hourly arrays in-memory
-    }
-    q = urllib.parse.urlencode(query)
-    with urllib.request.urlopen(f"{base}?{q}", timeout=120) as r:
-        return json.load(r)
-
-model_vars = []
-for n in LEVELS:
-    model_vars += [f"height_level{n}", f"pressure_level{n}", f"temperature_level{n}",
-                   f"relative_humidity_level{n}", f"dew_point_level{n}",
-                   f"wind_speed_level{n}", f"wind_direction_level{n}"]
-press_vars = []
-for p in PLEVELS:
-    press_vars += [f"temperature_{p}hPa", f"relative_humidity_{p}hPa", f"dew_point_{p}hPa",
-                   f"wind_speed_{p}hPa", f"wind_direction_{p}hPa", f"geopotential_height_{p}hPa"]
-
-dm = fetch(BASE_MODEL, model_vars)   # native model levels (private server)
-dp = fetch(BASE_PRESS, press_vars)   # pressure levels (public api)
-
-elev = dm["elevation"]               # common ground datum (same icon_d2 grid)
-Hm = dm["hourly"]
-Hp = dp["hourly"]
-pidx = {t: i for i, t in enumerate(Hp["time"])}   # pressure valid-time -> index
-
-run_note = "same run" if RUN_PRESS == RUN_MODEL else "RUN MISMATCH"
-
-# --- master timeline: model (private) hours that actually carry data ---
-times = [t for i, t in enumerate(Hm["time"]) if Hm["temperature_level65"][i] is not None]
-if not times:
-    raise SystemExit("no model-level data in response")
-
-# --- build two profiles in the {h,p,T,Dew,Dir,Spd,RH} shape for a valid time ---
-def empty():
-    return {k: [] for k in ("h", "p", "T", "Dew", "Dir", "Spd", "RH")}
-
-def build_profiles(t):
-    im = Hm["time"].index(t)
-    ip = pidx.get(t)
-
-    ml = empty()                     # native model levels (private server)
-    for n in LEVELS:
-        h  = Hm[f"height_level{n}"][im]
-        p  = Hm[f"pressure_level{n}"][im]
-        T  = Hm[f"temperature_level{n}"][im]
-        rh = Hm[f"relative_humidity_level{n}"][im]
-        td = Hm[f"dew_point_level{n}"][im]
-        sp = Hm[f"wind_speed_level{n}"][im]
-        dr = Hm[f"wind_direction_level{n}"][im]
-        if None in (h, p, T, rh, td, sp, dr):
-            continue
-        for k, v in zip(ml, (h - elev, p, T, td, dr, sp, rh)):
-            ml[k].append(v)
-
-    ref = empty()                    # pressure levels (public api, reference)
-    if ip is not None:
-        for p in PLEVELS:
-            gz = Hp[f"geopotential_height_{p}hPa"][ip]
-            T  = Hp[f"temperature_{p}hPa"][ip]
-            rh = Hp[f"relative_humidity_{p}hPa"][ip]
-            td = Hp[f"dew_point_{p}hPa"][ip]
-            sp = Hp[f"wind_speed_{p}hPa"][ip]
-            dr = Hp[f"wind_direction_{p}hPa"][ip]
-            if None in (gz, T, rh, td, sp, dr):
-                continue
-            for k, v in zip(ref, (gz - elev, p, T, td, dr, sp, rh)):
-                ref[k].append(v)
-
-    for prof in (ml, ref):           # sort surface -> top
-        order = sorted(range(len(prof["h"])), key=lambda j: prof["h"][j])
-        for k in prof:
-            prof[k] = [prof[k][j] for j in order]
-    return ml, ref
-
-profiles = {t: build_profiles(t) for t in times}   # precompute all hours once
+# --- fetch + build all hours once (shared loader) ---
+data = load(LAT, LON)
+elev = data.elev
+times = data.times
+profiles = data.profiles
+RUN_MODEL = data.run_model
+RUN_PRESS = data.run_press
+run_note = data.run_note
 
 # --- fixed axis limits over the whole forecast (so stepping is steady) ---
 plots_config = [
