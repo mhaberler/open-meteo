@@ -12,7 +12,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.widgets as mwidgets
 import metpy.calc as mpcalc
-from metpy.plots import SkewT
+from metpy.plots import SkewT, Hodograph
 from metpy.units import units
 
 from sounding_data import load, geocode
@@ -28,10 +28,15 @@ note_color = 'green' if data.run_note == "same run" else 'red'
 
 idx = times.index(TARGET) if TARGET in times else 0
 
-fig = plt.figure(figsize=(13, 11))
-skew = SkewT(fig, rotation=45, rect=(0.06, 0.12, 0.60, 0.78))
-# convective time-series strip (CCL->BL bars per hour), pressure-aligned with the Skew-T
-ax_conv = fig.add_axes((0.74, 0.12, 0.20, 0.78))
+# --- complex layout (after MetPy Advanced_Sounding_With_Complex_Layout):
+#     Skew-T fills the tall left column; right column stacks hodograph, the
+#     convective strip and the index table; compact widgets sit bottom-right. ---
+fig = plt.figure(figsize=(18, 12))
+skew = SkewT(fig, rotation=45, rect=(0.04, 0.05, 0.46, 0.84))
+hodo_ax = fig.add_axes((0.57, 0.64, 0.39, 0.31))   # hodograph (rebuilt each redraw)
+ax_conv = fig.add_axes((0.57, 0.46, 0.39, 0.13))   # convective CCL->BL time-series strip
+ax_tbl  = fig.add_axes((0.55, 0.15, 0.42, 0.27))   # index table (text, axis off)
+ax_tbl.axis('off')
 
 # --- static setup (built ONCE; clearing the SkewT axis would destroy its
 #     projection + log-p scale, so we never cla() — only swap dynamic artists) ---
@@ -43,14 +48,105 @@ skew.ax.set_xlim(-40, 40)
 skew.ax.set_xlabel('Temperatur (°C)')
 skew.ax.set_ylabel('Druck (hPa)')
 
-title_txt = fig.suptitle("", fontsize=13, fontweight='bold', y=0.99)
-sub_txt = fig.text(0.5, 0.945, "", ha='center', fontsize=9, color=note_color)
+# titles centered over the left Skew-T column only (x≈0.27), clear of the hodograph
+title_txt = fig.suptitle("", fontsize=11, fontweight='bold', x=0.27, y=0.985)
+sub_txt = fig.text(0.27, 0.925, "", ha='center', fontsize=8, color=note_color)
 dynamic = []                          # per-hour artists, removed before each redraw
-CAPE_SRC = 'model'                    # which profile drives parcel + CAPE/CIN shading
+CAPE_SRC = 'model'                    # which profile drives parcel + CAPE/CIN + panels
+
+HODO_MAX_KM = 12                      # height cap for the hodograph color / Bunkers
 
 
 def _q(seq, unit):
     return np.array(seq, dtype=float) * unit
+
+
+def _uvz(prof):
+    """(P, T, Td, z, u, v) with units for a {p,T,Dew,h,Spd,Dir} profile, or None."""
+    if not prof['p']:
+        return None
+    P  = _q(prof['p'], units.hPa)
+    T  = _q(prof['T'], units.degC)
+    Td = _q(prof['Dew'], units.degC)
+    z  = _q(prof['h'], units.meter)
+    u, v = mpcalc.wind_components(_q(prof['Spd'], units('m/s')), _q(prof['Dir'], units.deg))
+    return P, T, Td, z, u, v
+
+
+def _na(fn):
+    """Run fn() returning a formatted str; 'n/a' on any failure / non-finite."""
+    try:
+        v = fn()
+        return v if v is not None else 'n/a'
+    except Exception:
+        return 'n/a'
+
+
+def draw_hodograph(data6, src):
+    """Rebuild the hodograph from (P,T,Td,z,u,v); height-colored 0..HODO_MAX_KM + Bunkers."""
+    hodo_ax.cla()
+    P, T, Td, z, u, v = data6
+    m = z.to('km').m <= HODO_MAX_KM
+    uu, vv, zz = u[m], v[m], z[m]
+    spd = np.hypot(uu.to('m/s').m, vv.to('m/s').m)
+    cr = max(40.0, np.ceil((spd.max() if spd.size else 0) / 10.0) * 10.0)
+    h = Hodograph(hodo_ax, component_range=cr)
+    h.add_grid(increment=20, ls='-', lw=1.2, alpha=0.5)
+    h.add_grid(increment=10, ls='--', lw=0.8, alpha=0.2)
+    if uu.size:
+        h.plot_colormapped(uu, vv, c=zz.to('km'), linewidth=5,
+                           label=f'0-{HODO_MAX_KM}km wind')
+    try:                                  # Bunkers storm motion (needs full column)
+        rm, lm, mw = mpcalc.bunkers_storm_motion(P, u, v, z)
+        for vec, col, lab in ((rm, 'r', 'RM'), (lm, 'b', 'LM'), (mw, 'g', 'MW')):
+            hodo_ax.plot(vec[0].to('m/s').m, vec[1].to('m/s').m, 'o', color=col, markersize=6)
+            hodo_ax.annotate(lab, (vec[0].to('m/s').m, vec[1].to('m/s').m),
+                             color=col, fontsize=8, xytext=(4, 4), textcoords='offset points')
+    except Exception:
+        pass
+    hodo_ax.set_title(f'Hodograph (m/s, {src})', fontsize=10)
+
+
+def draw_table(data6, src):
+    """Rebuild the index table from (P,T,Td,z,u,v); thermo follows src, kinematic guarded."""
+    ax_tbl.cla()
+    ax_tbl.axis('off')
+    P, T, Td, z, u, v = data6
+
+    def cc(fn):
+        c, i = fn()
+        return f'{c.m:.0f} / {i.m:.0f}'
+    sb = _na(lambda: cc(lambda: mpcalc.surface_based_cape_cin(P, T, Td)))
+    ml_ = _na(lambda: cc(lambda: mpcalc.mixed_layer_cape_cin(P, T, Td)))
+    mu = _na(lambda: cc(lambda: mpcalc.most_unstable_cape_cin(P, T, Td)))
+    ki = _na(lambda: f"{mpcalc.k_index(P, T, Td).m:.0f}")
+    tt = _na(lambda: f"{mpcalc.total_totals_index(P, T, Td).m:.0f}")
+    pw = _na(lambda: f"{mpcalc.precipitable_water(P, Td).to('mm').m:.0f} mm")
+
+    def srh(depth):
+        rm, _lm, _mw = mpcalc.bunkers_storm_motion(P, u, v, z)
+        _p, _n, tot = mpcalc.storm_relative_helicity(z, u, v, depth=depth * units.km,
+                                                     storm_u=rm[0], storm_v=rm[1])
+        return f"{tot.m:.0f}"
+    def shr(depth):
+        us, vs = mpcalc.bulk_shear(P, u, v, height=z, depth=depth * units.km)
+        return f"{mpcalc.wind_speed(us, vs).to('m/s').m:.0f} m/s"
+    srh1, srh3 = _na(lambda: srh(1)), _na(lambda: srh(3))
+    shr1, shr6 = _na(lambda: shr(1)), _na(lambda: shr(6))
+
+    left = [('SBCAPE/CIN', sb), ('MLCAPE/CIN', ml_), ('MUCAPE/CIN', mu),
+            ('K-Index', ki), ('Totals-Totals', tt), ('PW', pw)]
+    right = [('SRH 0-1 km', srh1), ('SRH 0-3 km', srh3),
+             ('Shear 0-1 km', shr1), ('Shear 0-6 km', shr6)]
+    ax_tbl.text(0.0, 1.0, f'Indices ({src})', fontsize=11, fontweight='bold',
+                va='top', transform=ax_tbl.transAxes)
+    for col, items, x in ((0, left, 0.0), (1, right, 0.55)):
+        for r, (k, val) in enumerate(items):
+            y = 0.85 - r * 0.14
+            colr = 'orangered' if 'CAPE' in k else 'navy' if ('SRH' in k or 'Shear' in k) else 'black'
+            ax_tbl.text(x, y, k, fontsize=10, va='top', transform=ax_tbl.transAxes)
+            ax_tbl.text(x + 0.30, y, val, fontsize=10, fontweight='bold', color=colr,
+                        va='top', transform=ax_tbl.transAxes)
 
 
 def model_arrays(t):
@@ -179,6 +275,13 @@ def draw(i):
 
     dynamic.append(skew.ax.legend(loc='upper right', fontsize='small'))
 
+    # hodograph + index table from the SELECTED source (kinematic guarded inside)
+    src6 = {'model': _uvz(ml), 'pressure': _uvz(ref)}
+    psel = sel if (sel and src6.get(sel)) else next((s for s in ('model', 'pressure') if src6.get(s)), None)
+    if psel:
+        draw_hodograph(src6[psel], psel)
+        draw_table(src6[psel], psel)
+
     def _fmt(src):
         v = cc.get(src)
         tag = '◀shaded' if src == sel else ''
@@ -223,16 +326,17 @@ def on_submit(name):
         fig.canvas.draw_idle()
 
 
-ax_prev = fig.add_axes([0.40, 0.02, 0.08, 0.045])
-ax_next = fig.add_axes([0.52, 0.02, 0.08, 0.045])
-b_prev = mwidgets.Button(ax_prev, '◀ Prev')
-b_next = mwidgets.Button(ax_next, 'Next ▶')
+# compact controls, bottom-right (keep the left column free for the tall Skew-T)
+ax_prev = fig.add_axes([0.70, 0.075, 0.05, 0.03])
+ax_next = fig.add_axes([0.755, 0.075, 0.05, 0.03])
+b_prev = mwidgets.Button(ax_prev, '◀')
+b_next = mwidgets.Button(ax_next, '▶')
 b_prev.on_clicked(lambda _evt: step(-1))
 b_next.on_clicked(lambda _evt: step(+1))
 
 # CAPE/CIN source switch (model <-> pressure); drives parcel + red/blue shading
-ax_src = fig.add_axes([0.66, 0.015, 0.13, 0.07])
-ax_src.set_title('CAPE/CIN from', fontsize=8)
+ax_src = fig.add_axes([0.84, 0.045, 0.11, 0.065])
+ax_src.set_title('CAPE/CIN from', fontsize=7)
 radio = mwidgets.RadioButtons(ax_src, ('model', 'pressure'),
                               active=('model', 'pressure').index(CAPE_SRC))
 
@@ -244,7 +348,7 @@ def on_src(label):
 radio.on_clicked(on_src)
 
 # location picker: type a place name -> geocode -> relocate
-ax_loc = fig.add_axes([0.10, 0.018, 0.20, 0.04])
+ax_loc = fig.add_axes([0.60, 0.075, 0.09, 0.03])
 tb_loc = mwidgets.TextBox(ax_loc, 'Ort ', initial='Graz')
 tb_loc.on_submit(on_submit)
 
