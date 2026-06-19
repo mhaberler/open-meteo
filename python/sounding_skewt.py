@@ -88,23 +88,35 @@ def draw_hodograph(data6, src):
     P, T, Td, z, u, v = data6
     m = z.to('km').m <= HODO_MAX_KM
     uu, vv, zz = u[m], v[m], z[m]
-    spd = np.hypot(uu.to('m/s').m, vv.to('m/s').m)
-    cr = max(40.0, np.ceil((spd.max() if spd.size else 0) / 10.0) * 10.0)
+
+    # Bunkers storm motion (needs the full column) — computed first so the vectors
+    # are folded into the autoscale and stay inside the frame.
+    try:
+        storm = mpcalc.bunkers_storm_motion(P, u, v, z)   # (RM, LM, MW)
+    except Exception:
+        storm = None
+
+    # data-driven scaling: fit the 0-12 km trace (+ storm vectors) with ~10% headroom,
+    # then pick a ring increment giving ~3-4 rings (no fixed 40 m/s floor).
+    mags = list(np.hypot(uu.to('m/s').m, vv.to('m/s').m)) if uu.size else []
+    if storm:
+        mags += [np.hypot(s[0].to('m/s').m, s[1].to('m/s').m) for s in storm]
+    mx = (max(mags) if mags else 10.0) * 1.1
+    inc = 5 if mx <= 15 else 10 if mx <= 35 else 20 if mx <= 70 else 30
+    cr = max(2 * inc, np.ceil(mx / inc) * inc)
+
     h = Hodograph(hodo_ax, component_range=cr)
-    h.add_grid(increment=20, ls='-', lw=1.2, alpha=0.5)
-    h.add_grid(increment=10, ls='--', lw=0.8, alpha=0.2)
+    h.add_grid(increment=inc, ls='-', lw=1.2, alpha=0.5)
+    h.add_grid(increment=inc / 2, ls='--', lw=0.8, alpha=0.2)
     if uu.size:
         h.plot_colormapped(uu, vv, c=zz.to('km'), linewidth=5,
                            label=f'0-{HODO_MAX_KM}km wind')
-    try:                                  # Bunkers storm motion (needs full column)
-        rm, lm, mw = mpcalc.bunkers_storm_motion(P, u, v, z)
-        for vec, col, lab in ((rm, 'r', 'RM'), (lm, 'b', 'LM'), (mw, 'g', 'MW')):
+    if storm:
+        for vec, col, lab in zip(storm, ('r', 'b', 'g'), ('RM', 'LM', 'MW')):
             hodo_ax.plot(vec[0].to('m/s').m, vec[1].to('m/s').m, 'o', color=col, markersize=6)
             hodo_ax.annotate(lab, (vec[0].to('m/s').m, vec[1].to('m/s').m),
                              color=col, fontsize=8, xytext=(4, 4), textcoords='offset points')
-    except Exception:
-        pass
-    hodo_ax.set_title(f'Hodograph (m/s, {src})', fontsize=10)
+    hodo_ax.set_title(f'Hodograph (m/s, {src})  ±{cr:.0f}', fontsize=10)
 
 
 def draw_table(data6, src):
