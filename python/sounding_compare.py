@@ -8,9 +8,10 @@ from sounding_data import load, geocode
 
 LAT, LON = 46.9911, 15.4396          # LOWG — Graz Airport (Graz-Thalerhof)
 LABEL = "LOWG / Graz"                 # resolved place name (updated via the location box)
-TARGET = "2026-06-17T18:00"
+TARGET = "2026-06-20T09:00"
 
 # --- fetch + build all hours once (shared loader) ---
+print(f"Fetching ICON-D2 soundings for {LAT},{LON} …", flush=True)
 data = load(LAT, LON)
 elev = data.elev
 times = data.times
