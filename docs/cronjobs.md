@@ -196,3 +196,6 @@ Note: Not yet released
 # Delete forecasts older than 30 days
 5 * * * * find /var/lib/openmeteo-api/data/ -type f -name "chunk_*" -mtime +30 -delete
 ```
+
+# Delete forecasts older than 7 days
+5 * * * * find /var/lib/openmeteo-api/data/ -type f -name "chunk_*" -mtime +7 -delete
