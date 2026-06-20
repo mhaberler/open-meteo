@@ -15,7 +15,6 @@ data_spatial
 .venv
 dem-90m
 data-old/
-
-
-
 .vscode/
+python/__pycache__/
+.claude
