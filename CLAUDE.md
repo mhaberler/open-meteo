@@ -8,6 +8,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 # macOS: install dependencies
 brew install netcdf bzip2
 
+# Linux (Ubuntu): install dependencies
+sudo apt install libnetcdf-dev libeccodes-dev libbz2-dev libz-dev build-essential
+
 # Run API server (debug)
 swift run
 
@@ -28,6 +31,15 @@ docker build -f Dockerfile.development -t open-meteo-development .
 docker run -it --security-opt seccomp=unconfined -p 8080:8080 -v ${PWD}:/app -v open-meteo-data:/app/data open-meteo-development /bin/bash
 ```
 
+Downloading weather data for local development:
+```bash
+# Sync specific variables from AWS open data (no API key needed)
+swift run openmeteo-api sync ncep_gfs013 temperature_2m --past-days 3
+
+# Sync from a local/custom server with an API key
+swift run openmeteo-api sync dwd_icon,dwd_icon_eu temperature_2m --server http://127.0.0.1:8080/ --apikey 123 --past-days 7
+```
+
 Environment variables (set in shell or `.env` file):
 - `DATA_DIRECTORY` — path to weather data, must end with `/`, default `./data/`
 - `REMOTE_DATA_DIRECTORY` — remote S3 data URL (triggers HTTP-based reads with local block cache)
@@ -38,9 +50,9 @@ Environment variables (set in shell or `.env` file):
 
 ### Three-layer design
 
-1. **HTTP API** (`Sources/App/Controllers/`) — Vapor-based. `ForecastapiController` routes requests, decodes query parameters (`ForecastapiQuery`), calls one or more `GenericReader` instances, and serialises the result (JSON, FlatBuffers via `OpenMeteoSdk`, CSV, etc.).
+1. **HTTP API** (`Sources/App/Controllers/`) — Vapor-based. `ForecastapiController` registers all `/v1/*` routes, each backed by a `WeatherApiController` instance with a default model. It decodes query parameters (`ForecastapiQuery`), calls one or more `GenericReader` instances, and serialises the result (JSON, FlatBuffers via `OpenMeteoSdk`, CSV, XLSX, etc.).
 
-2. **Domain model** (`Sources/App/<ModelName>/`) — One directory per weather model (Icon, Gfs, Ecmwf, MeteoFrance, …). Each contains:
+2. **Domain model** (`Sources/App/<ModelName>/`) — One directory per weather model (Icon, Gfs, Ecmwf, MeteoFrance, Gem, Bom, Kma, …; 25+ models total). Each contains:
    - `<Model>.swift` — `enum` conforming to `GenericDomain` (grid definition, file layout, time resolution, ensemble count)
    - `<Model>Variable.swift` — raw and derived variables for that domain
    - `<Model>Reader.swift` — `GenericReaderDerived` subclass that computes derived variables from raw ones
@@ -57,6 +69,23 @@ Environment variables (set in shell or `.env` file):
 | `GenericReaderProtocol` | `get(variable:time:)` + `prefetchData` — implemented by `GenericReader` |
 | `GenericReaderDerived` | Layered reader: satisfies derived variables, delegates raw reads to `GenericReader` |
 | `GenericVariableMixable` | Allows multi-model mixing via `GenericReaderMixerRaw` |
+
+### Helper subdirectories
+
+- `Helper/Reader/` — core reader protocols and implementations: `GenericReader`, `GenericReaderDerived`, `GenericReaderMixerRaw` (blends multiple domains), `GenericReaderMulti` (multi-location), `GenericReaderCached`, `VariableHourlyDeriverHighLevel`
+- `Helper/Download/` — HTTP/FTP download utilities: `Curl.swift`, `CurlIndexed.swift` (indexed GRIB), specialisations for CDS/ECMWF/NetCDF; `GribStream`, `GribAttributes`; S3 uploader/lister; bzip2 decompressor
+- `Helper/OmReader/` — block-cache layer for HTTP-range reads (`OmHttpReaderBackend`, `OmReaderBlockCache`, `AtomicBlockCache`)
+- `Helper/Vapor/` — API key management, rate limiting, CIDR filtering, Stripe metering
+- `Helper/Solar/` — solar position algorithm, sun rise/set, DNI/GTI radiation helpers
+- `Helper/Writer/` — output serialisers: `JsonWriter`, `CsvWriter`, `XlsxWriter`, `ForecastApiResult`, `GenericVariableHandle`
+- `Helper/File/` — run-metadata JSON (`FullRunMetaJson`, `ModelMetaJson`), remote file management
+- `Helper/FlatBufferWriter/` — per-API-type FlatBuffers serialisers (weather, air-quality, marine, ensemble, climate, flood)
+- `Helper/Time/` — `Timestamp`, `TimerangeDt`, `IsoDate`, `IsoDateTime`
+- `Domains/` — grid projection implementations: `RegularGrid`, `ProjectionGrid`, `LambertConformalConic`, `LambertAzimuthalEqualArea`, `RotatedLatLon`, `GaussianGrid`, `Stereographic`
+
+### Data pipeline
+
+Download commands fetch raw GRIB or NetCDF data, convert it to `.om` files, and write metadata JSON. `CronjobCommand` schedules these commands automatically (see `docs/cronjobs.md`). `SyncCommand` pulls pre-built `.om` files from S3 (AWS open data or a private server) — the easiest way to get data for local development.
 
 ### Adding a new weather model
 
@@ -75,33 +104,3 @@ Environment variables (set in shell or `.env` file):
 - `Package.swift` enables `-cross-module-optimization -Ounchecked` and aggressive C flags (`-O3 -fno-math-errno …`) in release only.
 - `MARCH_SKYLAKE=TRUE` sets `-march=skylake` for Docker/Ubuntu release builds.
 - `ENABLE_PARQUET=TRUE` adds optional Apache Arrow Parquet output support.
-
-<!-- gortex:communities:start -->
-<!-- gortex:skills:start -->
-## Community Skills
-
-| Area | Description | Skill |
-|------|-------------|-------|
-| Mygame Example 99 Dirs | 9049 symbols | `/gortex-mygame-example-99-dirs` |
-| Sources Nioperformancetester 380 Dirs | 6769 symbols | `/gortex-sources-nioperformancetester-380-dirs` |
-| Mygame Example 34 Dirs Offset | 5185 symbols | `/gortex-mygame-example-34-dirs-offset` |
-| My Game Example 99 Dirs | 4145 symbols | `/gortex-my-game-example-99-dirs` |
-| Ts Reflection 62 Dirs | 4109 symbols | `/gortex-ts-reflection-62-dirs` |
-| Mygame Example 34 Dirs Flatbufferbuilder | 3554 symbols | `/gortex-mygame-example-34-dirs-flatbufferbuilder` |
-| Sources Niohttp2 111 Dirs | 2695 symbols | `/gortex-sources-niohttp2-111-dirs` |
-| X509 Ocsp 92 Dirs | 1937 symbols | `/gortex-x509-ocsp-92-dirs` |
-| 22 Dirs | 1566 symbols | `/gortex-22-dirs` |
-| Swiftzarr Codec 147 Dirs | 1398 symbols | `/gortex-swiftzarr-codec-147-dirs` |
-| Google Flatbuffers 106 Dirs | 1261 symbols | `/gortex-google-flatbuffers-106-dirs` |
-| Lit Autogenerated Atomicfoldingtests Atomicsfolding 1061 3 | 1061 symbols | `/gortex-lit-autogenerated-atomicfoldingtests-atomicsfolding-1061-3` |
-| Lit Autogenerated Atomicfoldingtests Atomicsfolding 1061 1 | 1061 symbols | `/gortex-lit-autogenerated-atomicfoldingtests-atomicsfolding-1061-1` |
-| Lit Autogenerated Atomicfoldingtests Atomicsfolding 1061 4 | 1061 symbols | `/gortex-lit-autogenerated-atomicfoldingtests-atomicsfolding-1061-4` |
-| Lit Autogenerated Atomicfoldingtests Atomicsfolding 1061 2 | 1061 symbols | `/gortex-lit-autogenerated-atomicfoldingtests-atomicsfolding-1061-2` |
-| My Game Example 49 Dirs | 1060 symbols | `/gortex-my-game-example-49-dirs` |
-| Ts Reflection 14 Dirs | 864 symbols | `/gortex-ts-reflection-14-dirs` |
-| Tests Nioposixtests Xctassertnothrow Acceptbackoffhandlertest Asyncchannelbootstraptests 819 1 | 819 symbols | `/gortex-tests-nioposixtests-xctassertnothrow-acceptbackoffhandlertest-asyncchannelbootstraptests-819-1` |
-| Tests Nioposixtests Xctassertnothrow Acceptbackoffhandlertest Asyncchannelbootstraptests 819 2 | 819 symbols | `/gortex-tests-nioposixtests-xctassertnothrow-acceptbackoffhandlertest-asyncchannelbootstraptests-819-2` |
-| Mygame Example 9 Dirs | 749 symbols | `/gortex-mygame-example-9-dirs` |
-<!-- gortex:skills:end -->
-
-<!-- gortex:communities:end -->

@@ -14,14 +14,14 @@ This document lists all required cronjobs to download data. However, downloading
 #41 2,5,8,11,14,17,20,23  * * * /usr/local/bin/openmeteo-api download icon-eu --group pressureLevel > ~/log/icon-eu_upper-level.log 2>&1 || cat ~/log/icon-eu_upper-level.log
 #44 0,3,6,9,12,15,18,21 * * * /usr/local/bin/openmeteo-api download icon-d2 --group pressureLevel > ~/log/icon-d2_upper-level.log 2>&1 || cat ~/log/icon-d2_upper-level.log
 # NOTE: --group modelLevel keeps its upstream meaning (surface variables flagged "model-level"), NOT the temp/wind profile.
-#       The full native model-level profile (u/v/t/qv/p over all levels; rh/dew_point derived on read) is --group hires-temp.
-#41 2,8,14,20  * * * /usr/local/bin/openmeteo-api download icon --group hires-temp > ~/log/icon_model-level.log 2>&1 || cat ~/log/icon_model-level.log
-#41 2,5,8,11,14,17,20,23  * * * /usr/local/bin/openmeteo-api download icon-eu --group hires-temp > ~/log/icon-eu_model-level.log 2>&1 || cat ~/log/icon-eu_model-level.log
-#44 0,3,6,9,12,15,18,21 * * * /usr/local/bin/openmeteo-api download icon-d2 --group hires-temp > ~/log/icon-d2_model-level.log 2>&1 || cat ~/log/icon-d2_model-level.log
+#       The full native model-level profile (u/v/t/qv/p over all levels; rh/dew_point derived on read) is --group hiresTemp.
+#41 2,8,14,20  * * * /usr/local/bin/openmeteo-api download icon --group hiresTemp > ~/log/icon_model-level.log 2>&1 || cat ~/log/icon_model-level.log
+#41 2,5,8,11,14,17,20,23  * * * /usr/local/bin/openmeteo-api download icon-eu --group hiresTemp > ~/log/icon-eu_model-level.log 2>&1 || cat ~/log/icon-eu_model-level.log
+#44 0,3,6,9,12,15,18,21 * * * /usr/local/bin/openmeteo-api download icon-d2 --group hiresTemp > ~/log/icon-d2_model-level.log 2>&1 || cat ~/log/icon-d2_model-level.log
 
 
 # Full model-level profile, every run, full forecast range (FL180 split dropped).
-44 0,3,6,9,12,15,18,21 * * * /usr/local/bin/openmeteo-api download icon-d2 --update-meta --group hires-temp --concurrent 8 > ~/log/icon-d2_model-level.log 2>&1 || cat ~/log/icon-d2_model-level.log
+44 0,3,6,9,12,15,18,21 * * * /usr/local/bin/openmeteo-api download icon-d2 --update-meta --group hiresTemp --concurrent 8 > ~/log/icon-d2_model-level.log 2>&1 || cat ~/log/icon-d2_model-level.log
 
 # GFS
 40 3,9,15,21 * * * /usr/local/bin/openmeteo-api download-gfs gfs025 > ~/log/gfs025.log 2>&1 || cat ~/log/gfs025.log
@@ -89,7 +89,7 @@ This document lists all required cronjobs to download data. However, downloading
 
 Notes:
 - All upper level variables are commented out
-- `--group hires-temp` downloads the full ICON native model-level profile (all levels). Model-level variables (`temperature_levelN`, `pressure_levelN`, `wind_u/v_component_levelN`, `specific_humidity_levelN`, plus on-read derived `relative_humidity/dew_point/height`) are currently served correctly only via JSON/CSV — the FlatBuffers encoder does not yet carry the level index, so request them as `format=json` (or csv).
+- `--group hiresTemp` downloads the full ICON native model-level profile (all levels). Model-level variables (`temperature_levelN`, `pressure_levelN`, `wind_u/v_component_levelN`, `specific_humidity_levelN`, plus on-read derived `relative_humidity/dew_point/height`) are currently served correctly only via JSON/CSV — the FlatBuffers encoder does not yet carry the level index, so request them as `format=json` (or csv).
 - MeteoFrance requires an API key which needs to be placed in `~mfkey.eny`. Format. `export METEOFRANCE_API_KEY="eyJ4NXQi...`
 - JMA, BOM and CMA require a server URL with username and password combination, which is not publicly disclosed
 
