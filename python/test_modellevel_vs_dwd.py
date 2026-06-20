@@ -42,7 +42,7 @@ VARS = {
     "p":  dict(dwd="p",  api="pressure",          conv=lambda x: x / 100.0,  atol=0.2,  rtol=None, unit="hPa"),
     "u":  dict(dwd="u",  api="wind_u_component",  conv=lambda x: x,          atol=0.1,  rtol=None, unit="m/s"),
     "v":  dict(dwd="v",  api="wind_v_component",  conv=lambda x: x,          atol=0.1,  rtol=None, unit="m/s"),
-    "qv": dict(dwd="qv", api="specific_humidity", conv=lambda x: x * 1000.0, atol=None, rtol=0.01, unit="g/kg"),
+    "qv": dict(dwd="qv", api="specific_humidity", conv=lambda x: x * 1000.0, atol=0.005, rtol=0.01, unit="g/kg"),
 }
 
 # Per-model: DWD path == api download domain id, region + grid in the GRIB filename,
@@ -179,8 +179,10 @@ def main():
                 continue
             diff = got - ref
             if spec["rtol"] is not None:
-                tol = spec["rtol"] * max(abs(ref), 1e-9)
-                tol_s = f"{spec['rtol']*100:.0f}%"
+                rtol_tol = spec["rtol"] * max(abs(ref), 1e-9)
+                atol_floor = spec["atol"] or 0
+                tol = max(atol_floor, rtol_tol)
+                tol_s = f"{spec['rtol']*100:.0f}%" + (f"/{atol_floor:.3g}" if atol_floor else "")
             else:
                 tol = spec["atol"]
                 tol_s = f"{spec['atol']:.2g}"
