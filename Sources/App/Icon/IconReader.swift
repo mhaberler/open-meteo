@@ -720,9 +720,7 @@ struct IconReader: GenericReaderDerived, GenericReaderProtocol {
         if let cached = hhlColumnCache.column {
             return cached
         }
-        guard let iconDomain = reader.domain as? IconDomains else {
-            throw IconHhlError.notIconDomain(domain: "\(reader.domain)")
-        }
+        let iconDomain = reader.domain as! IconDomains
         guard let file = await reader.domain.getStaticFile(type: .hhl, httpClient: options.httpClient, logger: options.logger) else {
             throw IconHhlError.staticFileMissing(domain: iconDomain.rawValue)
         }
