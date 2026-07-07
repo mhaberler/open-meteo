@@ -1,0 +1,12 @@
+# Third-party dependencies for the model-level python examples/tools.
+# Stdlib (argparse, bz2, json, urllib, ...) and local modules
+# (sounding_data, sounding_global_data) are not listed.
+eccodes            # GRIB decoding (test_modellevel_vs_dwd.py)
+matplotlib
+metpy              # Skew-T plots, thermodynamic calculations
+numpy
+omfiles            # open-meteo .om file reader (omshow.py)
+openmeteo-requests
+pandas
+requests-cache
+retry-requests

@@ -1,0 +1,31 @@
+[Unit]
+Description=openmeteo mah fpcflat
+After=network.target
+
+[Service]
+Type=simple
+User=nobody
+Group=nogroup
+
+# Environment variables
+# needed for meta.json
+# at curl https://open-meteo.mah.priv.at/data/dwd_icon_d2/static/meta.json
+
+Environment="API_SYNC_APIKEYS=foobarbaz"
+# Alternatively, load from a file:
+# EnvironmentFile=/etc/myprogram/env.conf
+
+# Working directory and execution
+WorkingDirectory=/big/open-meteo
+ExecStart=/usr/local/bin/openmeteo-api --env production --hostname 0.0.0.0 --port  8080
+
+# Restart policy (keeps it running)
+Restart=always
+RestartSec=5s
+
+# Logging configuration
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
