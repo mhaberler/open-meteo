@@ -464,6 +464,9 @@ struct ForecastHeightVariable: HeightVariableRespresentable, GenericVariableMixa
 enum ForecastModelLevelVariableType: String, GenericVariableMixable {
     case height
     case height_agl
+    case height_half
+    case height_half_agl
+    case wind_w
     case wind_u_component
     case wind_v_component
     case temperature

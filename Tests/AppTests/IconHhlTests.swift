@@ -52,23 +52,30 @@ import OmFileFormat
         #expect(fullAsl(3) == (18013 + 531) / 2)
     }
 
-    /// `hires-temp` is the unified full model-level profile: every level 1…N (top..surface),
-    /// each carrying exactly the five downloaded variables. Locks in the FL180-split removal.
+    /// `hires-temp` is the unified model-level profile: every full level 1…N (top..surface)
+    /// carrying exactly the five full-level variables, plus vertical wind W on every half
+    /// level 1…N+1. Locks in the FL180-split removal.
     @Test func hiresTempCoversAllLevels() {
-        let expectedVars: Set<IconModelLevelVariableType> = [
+        let expectedFullVars: Set<IconModelLevelVariableType> = [
             .wind_u_component, .wind_v_component, .temperature, .specific_humidity, .pressure
         ]
         for domain in [IconDomains.iconD2, .iconEu, .icon] {
             let n = domain.numberOfModelFullLevels
+            let nHalf = domain.numberOfModelHalfLevels
             let vars = DownloadIconCommand.VariableGroup.hiresTemp.variables(domain: domain)
             let levelVars = vars.compactMap { $0 as? IconModelLevelVariable }
             // every selected variable is a model-level variable (no surface/pressure leakage)
             #expect(levelVars.count == vars.count)
-            #expect(levelVars.count == n * expectedVars.count)
-            #expect(Set(levelVars.map { $0.level }) == Set(1...n))
+            #expect(levelVars.count == n * expectedFullVars.count + nHalf)
+            let fullVars = levelVars.filter { !$0.variable.isHalfLevel }
+            let halfVars = levelVars.filter { $0.variable.isHalfLevel }
+            #expect(Set(fullVars.map { $0.level }) == Set(1...n))
             for level in 1...n {
-                #expect(Set(levelVars.filter { $0.level == level }.map { $0.variable }) == expectedVars)
+                #expect(Set(fullVars.filter { $0.level == level }.map { $0.variable }) == expectedFullVars)
             }
+            // W: exactly one per half level 1…N+1
+            #expect(halfVars.allSatisfy { $0.variable == .wind_w })
+            #expect(halfVars.map { $0.level }.sorted() == Array(1...nHalf))
         }
     }
 

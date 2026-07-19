@@ -67,6 +67,9 @@ struct DownloadIconCommand: AsyncCommand {
                         IconModelLevelVariable(variable: .specific_humidity, level: level),
                         IconModelLevelVariable(variable: .pressure, level: level)
                     ]
+                } + (1...domain.numberOfModelHalfLevels).reversed().map { level in
+                    // W is on half levels (1...nFull+1)
+                    IconModelLevelVariable(variable: .wind_w, level: level)
                 }
             case .pressureLevel:
                 return domain.levels.reversed().flatMap { level in

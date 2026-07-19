@@ -8,6 +8,12 @@ enum IconModelLevelVariableType: String, CaseIterable, Sendable {
     case height
     /// Geometric height of the full level, above the model surface (m)
     case height_agl
+    /// Geometric height of the half level (= hhl[N]), above sea level (m)
+    case height_half
+    /// Geometric height of the half level, above the model surface (m)
+    case height_half_agl
+    /// Vertical wind W (m/s), defined on half levels (level N sits at hhl[N])
+    case wind_w
     case wind_u_component
     case wind_v_component
     case temperature
@@ -17,6 +23,14 @@ enum IconModelLevelVariableType: String, CaseIterable, Sendable {
     case wind_speed
     case wind_direction
     case dew_point
+
+    /// Half-level variables (W, HHL heights): valid levels 1...nFull+1, one half step above full levels.
+    var isHalfLevel: Bool {
+        switch self {
+        case .wind_w, .height_half, .height_half_agl: return true
+        default: return false
+        }
+    }
 }
 
 /// A variable on a native ICON model full level, named `<variable>_level<N>`
@@ -35,7 +49,9 @@ struct IconModelLevelVariable: ModelLevelVariableRespresentable, IconVariableDow
 
     var scalefactor: Float {
         switch variable {
-        case .height, .height_agl: return 1
+        case .height, .height_agl, .height_half, .height_half_agl: return 1
+        // 0.01 m/s steps; int16 range ±327 m/s covers convective extremes
+        case .wind_w: return 100
         case .wind_u_component, .wind_v_component: return 10
         case .temperature: return 10
         // Stored logarithmically (see omFileCompression): scalefactor multiplies log10(1+g/kg).
@@ -63,7 +79,8 @@ struct IconModelLevelVariable: ModelLevelVariableRespresentable, IconVariableDow
 
     var interpolation: ReaderInterpolation {
         switch variable {
-        case .height, .height_agl: return .linear
+        case .height, .height_agl, .height_half, .height_half_agl: return .linear
+        case .wind_w: return .hermite(bounds: nil)
         case .wind_u_component, .wind_v_component, .temperature, .pressure: return .hermite(bounds: nil)
         case .specific_humidity: return .linear
         case .relative_humidity: return .hermite(bounds: 0...100)
@@ -74,7 +91,8 @@ struct IconModelLevelVariable: ModelLevelVariableRespresentable, IconVariableDow
 
     var unit: SiUnit {
         switch variable {
-        case .height, .height_agl: return .metre
+        case .height, .height_agl, .height_half, .height_half_agl: return .metre
+        case .wind_w: return .metrePerSecond
         case .wind_u_component, .wind_v_component: return .metrePerSecond
         case .temperature: return .celsius
         case .specific_humidity: return .gramPerKilogram
@@ -107,8 +125,10 @@ struct IconModelLevelVariable: ModelLevelVariableRespresentable, IconVariableDow
 
     func getVarAndLevel(domain: IconDomains) -> (variable: String, cat: String, level: Int?)? {
         switch variable {
-        case .height, .height_agl:
-            return nil
+        case .height, .height_agl, .height_half, .height_half_agl:
+            return nil  // derived on read from the static hhl.om stack
+        case .wind_w:
+            return ("w", "model-level", level)
         case .wind_u_component:
             return ("u", "model-level", level)
         case .wind_v_component:

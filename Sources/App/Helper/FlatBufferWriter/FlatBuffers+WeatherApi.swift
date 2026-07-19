@@ -701,8 +701,10 @@ extension ForecastHeightOrModelLevelVariable: FlatBuffersVariable {
             return v.getFlatBuffersMeta()
         case .modelLevel(let ml):
             switch ml.variable {
-            case .height, .height_agl:
+            case .height, .height_agl, .height_half, .height_half_agl:
                 return .init(variable: .geopotentialHeight)
+            case .wind_w:
+                return .init(variable: .verticalVelocity)
             case .wind_u_component:
                 return .init(variable: .windUComponent)
             case .wind_v_component:
@@ -729,8 +731,10 @@ extension ForecastHeightOrModelLevelVariable: FlatBuffersVariable {
 extension IconModelLevelVariable: FlatBuffersVariable {
     func getFlatBuffersMeta() -> FlatBufferVariableMeta {
         switch variable {
-        case .height, .height_agl:
+        case .height, .height_agl, .height_half, .height_half_agl:
             return .init(variable: .geopotentialHeight)
+        case .wind_w:
+            return .init(variable: .verticalVelocity)
         case .wind_u_component:
             return .init(variable: .windUComponent)
         case .wind_v_component:

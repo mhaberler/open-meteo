@@ -43,7 +43,7 @@ struct IconReader: GenericReaderDerived, GenericReaderProtocol {
         // temperature_level200 on a 65-level domain) would otherwise hit a missing .om file and
         // silently return NaN. Reject it up front with a clear error.
         if case let .height(modelLevel) = raw {
-            let nLevels = reader.domain.numberOfModelFullLevels
+            let nLevels = modelLevel.variable.isHalfLevel ? reader.domain.numberOfModelHalfLevels : reader.domain.numberOfModelFullLevels
             guard modelLevel.level >= 1, modelLevel.level <= nLevels else {
                 throw IconModelLevelError.levelOutOfRange(level: modelLevel.level, max: nLevels, domain: reader.domain.rawValue)
             }
@@ -55,6 +55,12 @@ struct IconReader: GenericReaderDerived, GenericReaderProtocol {
                 return DataAndUnit([Float](repeating: height ?? .nan, count: time.time.count), .metre)
             case .height_agl:
                 let height = try await fullLevelHeightAGL(fullLevel: modelLevel.level)
+                return DataAndUnit([Float](repeating: height ?? .nan, count: time.time.count), .metre)
+            case .height_half:
+                let height = try await halfLevelHeightASL(halfLevel: modelLevel.level)
+                return DataAndUnit([Float](repeating: height ?? .nan, count: time.time.count), .metre)
+            case .height_half_agl:
+                let height = try await halfLevelHeightAGL(halfLevel: modelLevel.level)
                 return DataAndUnit([Float](repeating: height ?? .nan, count: time.time.count), .metre)
             default:
                 break
@@ -739,6 +745,25 @@ struct IconReader: GenericReaderDerived, GenericReaderProtocol {
         }
         return asl  // sea or no data: ASL is the reference
     }
+
+    /// Geometric height ASL of half level N (1-based, top=1, N+1=surface) = hhl[N] directly.
+    func halfLevelHeightASL(halfLevel: Int) async throws -> Float? {
+        let hs = try await hhlColumnASL()
+        guard halfLevel >= 1, halfLevel <= hs.count else { return nil }
+        let h = hs[halfLevel - 1]
+        guard h.isFinite else { return .nan }
+        return h
+    }
+
+    /// AGL version (subtract model surface elevation).
+    func halfLevelHeightAGL(halfLevel: Int) async throws -> Float? {
+        guard let asl = try await halfLevelHeightASL(halfLevel: halfLevel) else { return nil }
+        let surf = reader.modelElevation.numeric
+        if surf.isFinite && surf > -999 {
+            return asl - surf
+        }
+        return asl  // sea or no data: ASL is the reference
+    }
 }
 
 struct IconMixer: GenericReaderMixer {
@@ -759,6 +784,14 @@ struct IconMixer: GenericReaderMixer {
 
     func fullLevelHeightAGL(fullLevel: Int) async throws -> Float? {
         return try await reader.first?.fullLevelHeightAGL(fullLevel: fullLevel)
+    }
+
+    func halfLevelHeightASL(halfLevel: Int) async throws -> Float? {
+        return try await reader.first?.halfLevelHeightASL(halfLevel: halfLevel)
+    }
+
+    func halfLevelHeightAGL(halfLevel: Int) async throws -> Float? {
+        return try await reader.first?.halfLevelHeightAGL(halfLevel: halfLevel)
     }
 }
 
