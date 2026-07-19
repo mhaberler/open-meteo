@@ -92,7 +92,8 @@ struct IconModelLevelVariable: ModelLevelVariableRespresentable, IconVariableDow
     var unit: SiUnit {
         switch variable {
         case .height, .height_agl, .height_half, .height_half_agl: return .metre
-        case .wind_w: return .metrePerSecond
+        // vertical velocity is conventionally m/s; exempt from windspeed_unit conversion
+        case .wind_w: return .metrePerSecondNotUnitConverted
         case .wind_u_component, .wind_v_component: return .metrePerSecond
         case .temperature: return .celsius
         case .specific_humidity: return .gramPerKilogram
