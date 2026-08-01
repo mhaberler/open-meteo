@@ -60,9 +60,12 @@ struct IconModelLevelVariable: ModelLevelVariableRespresentable, IconVariableDow
         // Stored logarithmically (see omFileCompression): scalefactor multiplies log10(1+g/kg).
         // Max ~30 g/kg → log10≈1.5 → ~14900 (< INT16_MAX 32767, reserved for NaN); ~0.02% relative steps.
         case .specific_humidity: return 10000
-        // Stored logarithmically, same rationale as specific_humidity: cloud condensate
-        // spans many orders of magnitude (near-zero in clear layers, up to a few g/kg in cloud).
-        case .cloud_water, .cloud_ice: return 10000
+        // Stored logarithmically (see omFileCompression). Unlike specific_humidity, the whole
+        // useful range (~1e-4 g/kg noise floor up to a few g/kg in cloud) sits below log10(1+x)'s
+        // x=1 elbow, so encoding is effectively linear here — precision is set by scalefactor alone.
+        // Ceiling 10 g/kg (deep-convective qc headroom) → log10(11)≈1.04 → ~31200 (< INT16_MAX
+        // 32767, reserved for NaN); near-zero step ≈ ln(10)/scalefactor ≈ 7.7e-8 kg/kg.
+        case .cloud_water, .cloud_ice: return 30000
         case .relative_humidity: return 1
         case .pressure: return 10
         case .wind_speed, .wind_direction, .dew_point: return 10
