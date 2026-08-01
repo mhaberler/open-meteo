@@ -65,7 +65,10 @@ struct DownloadIconCommand: AsyncCommand {
                         IconModelLevelVariable(variable: .wind_v_component, level: level),
                         IconModelLevelVariable(variable: .temperature, level: level),
                         IconModelLevelVariable(variable: .specific_humidity, level: level),
-                        IconModelLevelVariable(variable: .pressure, level: level)
+                        IconModelLevelVariable(variable: .pressure, level: level),
+                        IconModelLevelVariable(variable: .cloud_water, level: level),
+                        IconModelLevelVariable(variable: .cloud_ice, level: level),
+                        IconModelLevelVariable(variable: .cloud_cover, level: level)
                     ]
                 } + (1...domain.numberOfModelHalfLevels).reversed().map { level in
                     // W is on half levels (1...nFull+1)
