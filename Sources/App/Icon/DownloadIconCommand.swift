@@ -18,6 +18,7 @@ struct DownloadIconCommand: AsyncCommand {
         case pressureLevelGt500
         case pressureLevelLtE500
         case hiresTemp
+        case heidiVars
 
         var realm: String? {
             switch self {
@@ -74,6 +75,29 @@ struct DownloadIconCommand: AsyncCommand {
                     // W is on half levels (1...nFull+1)
                     IconModelLevelVariable(variable: .wind_w, level: level)
                 }
+            case .heidiVars:
+                // dewpoint_2m, surface_pressure, wet_bulb_temperature_2m are derived on read
+                // from temperature_2m/relative_humidity_2m/pressure_msl below; no raw download needed.
+                // snowfall_convective_water_equivalent is merged into snowfall_water_equivalent at
+                // ingest and not persisted on its own, but must still be downloaded here.
+                let vars: [IconSurfaceVariable] = [
+                    .wind_gusts_10m,
+                    .visibility,
+                    .pressure_msl,
+                    .weather_code,
+                    .precipitation,
+                    .rain,
+                    .showers,
+                    .snowfall_water_equivalent,
+                    .snowfall_convective_water_equivalent,
+                    .temperature_2m,
+                    .relative_humidity_2m,
+                    .cape,
+                    .lightning_potential,
+                    .convective_cloud_base,
+                    .convective_cloud_top
+                ]
+                return vars
             case .pressureLevel:
                 return domain.levels.reversed().flatMap { level in
                     IconPressureVariableType.allCases.map { variable in
