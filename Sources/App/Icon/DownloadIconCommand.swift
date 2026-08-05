@@ -196,13 +196,27 @@ struct DownloadIconCommand: AsyncCommand {
         let file2 = "\(serverPrefix)fr_land/\(domainPrefix)_\(gridType)_time-invariant_\(dateStr)\(additionalTimeString)_\(variableName2).grib2.bz2"
         let landFraction = try await cdo.downloadAndRemap(file2)[0].data.data
 
+        // DWD also publishes `fr_lake` (used to init the FLake lake scheme) for icon/iconEu/iconD2/iconD2Eps,
+        // but not iconEps/iconEuEps. Large lakes have low FR_LAND but are not sea -- without this, lake cells
+        // get masked to -999 (surfaced as elevation 0) even though HSURF itself is correct there.
+        let domainsWithLakeFraction: Set<IconDomains> = [.icon, .iconEu, .iconD2, .iconD2Eps]
+        let lakeFraction: [Float]
+        if domainsWithLakeFraction.contains(domain) {
+            let variableName3 = (domain == .iconD2 || domain == .iconD2Eps) ? "fr_lake" : "FR_LAKE"
+            let file3 = "\(serverPrefix)fr_lake/\(domainPrefix)_\(gridType)_time-invariant_\(dateStr)\(additionalTimeString)_\(variableName3).grib2.bz2"
+            lakeFraction = try await cdo.downloadAndRemap(file3)[0].data.data
+        } else {
+            lakeFraction = [Float](repeating: 0, count: landFraction.count)
+        }
+
         // try Array2D(data: hsurf, nx: domain.grid.nx, ny: domain.grid.ny).writeNetcdf(filename: "\(downloadDirectory)hsurf.nc")
         // try Array2D(data: landFraction, nx: domain.grid.nx, ny: domain.grid.ny).writeNetcdf(filename: "\(downloadDirectory)fr_land.nc")
 
-        // Set all sea grid points to -999
-        precondition(hsurf.count == landFraction.count)
+        // Set all sea grid points to -999. Lake fraction counts toward "not sea" -- only cells that are
+        // neither land nor lake (i.e. actual open sea) get masked.
+        precondition(hsurf.count == landFraction.count && hsurf.count == lakeFraction.count)
         for i in hsurf.indices {
-            if landFraction[i] < 0.5 {
+            if landFraction[i] + lakeFraction[i] < 0.5 {
                 hsurf[i] = -999
             }
         }

@@ -85,27 +85,83 @@ Two things were checked directly:
 
 A local reproduction of the fix-by-regeneration attempt was also started and aborted before completion (DWD doesn't republish the time-invariant `HSURF`/`FR_LAND` files under every run timestamp, only occasionally — the naive `--run latest` picked a run with no published file at all, hit 404s, and was stopped; the original `HSURF.om` was restored from backup with no lasting effect). The direct grib decode above supersedes that attempt and is conclusive on its own.
 
-## Open question (revised)
+## Root cause, confirmed
 
-Given current DWD data + current upstream code both produce the bug, the
-question flips: **why doesn't production show it?** Candidates, not yet
-distinguished:
-- Production runs additional/different logic not present in this public
-  checkout (e.g. a DEM-based correction, a different/lower `FR_LAND`
-  threshold, or lake-specific handling).
-- Production's static elevation file is itself an *older* snapshot, from
-  before DWD's `FR_LAND` mask degraded for this area — i.e. production
-  being correct could be its own staleness accident, predating whatever
-  changed DWD's land-fraction data here, rather than evidence of a fix.
-- Production ingests from a different DWD product/grid variant (this
-  check used the `regular-lat-lon` remap; DWD also publishes an
-  `icosahedral` native-grid version — different regridding could shift a
-  borderline `FR_LAND` value, though 3 of the 4 measured values are far
-  enough below `0.5` that regridding alone seems unlikely to flip them).
+DWD publishes a **separate `fr_lake` field** for icon, icon-eu and icon-d2
+(external parameters used to initialize ICON's own FLake lake scheme —
+`fr_lake`, `depth_lk`, `t_bot_lk`, `c_t_lk` are all published alongside
+`fr_land`/`hsurf`). Decoded directly from the current DWD grib at each
+probe:
 
-Not yet established which. Would need visibility into production's actual
-ingest history/pipeline to settle it, which isn't available from this
-side.
+| probe | `FR_LAND` | `FR_LAKE` | `FR_LAND + FR_LAKE` |
+|---|---|---|---|
+| 47.90, 11.31 | 0.1286 | 0.8714 | 1.0000 |
+| 47.88, 11.31 | 0.0563 | 0.9437 | 1.0000 |
+| 47.92, 11.33 | 0.3239 | 0.6761 | 1.0000 |
+| 47.86, 11.29 | 0.1449 | 0.8551 | 1.0000 |
+| 47.90, 11.25 (land) | 1.0000 | 0.0000 | 1.0000 |
+
+At every lake cell, the fraction "missing" from `FR_LAND` is accounted for
+entirely by `FR_LAKE` — these cells are 0% actual open ocean, 68–94% lake.
+DWD's own model distinguishes "lake" from "sea" as separate categories;
+this repo's downloader only ever fetches/checks `FR_LAND`
+(`DownloadIconCommand.swift`, `convertSurfaceElevation`) and treats
+"not-land" as synonymous with "sea," discarding the exact information
+(`fr_lake`) that would tell it otherwise. `HSURF` itself was never wrong —
+DWD's raw orography is ~584 m at every one of these cells, correctly.
+
+**This is the confirmed, complete root cause** — no longer just a
+staleness or data-snapshot question. Whether or not production separately
+avoids it (still unknown — see below), the defect is real and
+reproducible with current upstream code and current DWD data.
+
+## Suggested fix
+
+In `convertSurfaceElevation` (`Sources/App/Icon/DownloadIconCommand.swift`),
+also download `fr_lake` (same URL/remap pattern as the existing `fr_land`
+fetch) and change the masking condition from:
+```swift
+if landFraction[i] < 0.5 {
+    hsurf[i] = -999
+}
+```
+to something that only masks cells with negligible land **and** negligible
+lake fraction, e.g.:
+```swift
+if landFraction[i] + lakeFraction[i] < 0.5 {
+    hsurf[i] = -999
+}
+```
+`HSURF`'s raw value needs no correction — it's already correct for lake
+cells; only the masking condition that discards it is wrong.
+
+## Open question (secondary) — resolved as "not a code difference"
+
+Initially assumed production's non-reproduction meant upstream had a newer
+fix this repo (checked out from an older base) was missing. Checked that
+directly, live, rather than relying on the locally cached `upstream/main`
+ref (which was a month stale):
+
+- Fetched the **current** `Sources/App/Icon/DownloadIconCommand.swift` and
+  `Sources/App/Domains/Gridable.swift` straight from
+  `raw.githubusercontent.com/open-meteo/open-meteo/main` — byte-identical
+  masking logic, no `fr_lake` anywhere, no lake-aware handling at all.
+- Pulled the **full commit history** for `DownloadIconCommand.swift` via
+  the GitHub API, back to the project's first commit (`253981d07`,
+  2022-07-27). The `FR_LAND`-based sea-masking approach has existed
+  essentially unchanged since day one; nothing in the history touches
+  lake-fraction handling.
+
+**Conclusion: this is not a fork-is-older problem.** A byte-for-byte
+current upstream checkout has the identical defect. Whatever explains
+production's correct value at these coordinates, it is not a code
+difference visible in the public repository — most likely production's
+static elevation file predates a DWD-side change to `FR_LAND` for this
+area (the same "generate once, cache forever" mechanism this repo has,
+just cutting the other way: production being stale-but-lucky rather than
+fixed), or production applies an out-of-band correction outside this
+codebase. Not resolvable from this side, and doesn't block fixing the
+confirmed root cause above.
 
 ## Impact
 
@@ -116,9 +172,14 @@ locations over large lakes.
 
 ## Scope
 
-If confirmed as a genuine data/code issue (pending the open question
-above), it likely isn't ICON-specific: the same `-999`-marks-sea /
-`.sea → 0` convention is used by most downloaders in this codebase (GFS,
-UKMO, ERA5, GEM, ECMWF, CMA, MeteoSwiss, ItaliaMeteoArpae, MfWave, ...),
-so any sufficiently large lake could show the same wrong `0` on any model
-whose upstream land-sea mask lumps big lakes in with ocean.
+Confirmed `fr_lake` is published by DWD for all three deterministic ICON
+domains (`icon`, `icon-eu`, `icon-d2`), so this affects every large lake
+covered by any of them, not just Starnberger See/icon-d2 — e.g. Lake
+Constance, Lake Geneva, and others within the icon-eu/icon-d2 domains.
+
+More broadly, the same `-999`-marks-sea / `.sea → 0` convention (with no
+lake-fraction check) is used by most other downloaders in this codebase
+(GFS, UKMO, ERA5, GEM, ECMWF, CMA, MeteoSwiss, ItaliaMeteoArpae, MfWave,
+...). Each would need checking individually for whether its own upstream
+source publishes an equivalent lake-fraction field that's similarly being
+ignored.
