@@ -66,22 +66,46 @@ instance ingesting that raw upstream data — this collapse is a `.sea → 0`
 design choice that's only correct for actual sea level, not large inland
 lakes sitting well above it.
 
-## Open question
+## Investigation update: staleness ruled out, code+current-DWD-data reproduces it
 
-Production returning the correct, non-zero value at the same coordinates
-means this needs to be resolved before it's clear where the bug actually
-is:
-- Does production's ICON-D2 `HSURF`/elevation static file differ from
-  what this repo's current downloader produces (e.g. a data source change,
-  a masking-threshold fix, or a DEM-based correction applied to
-  production's static file that isn't present in this repo's code)?
-- Or is the self-hosted instance simply running stale/corrupted static
-  data (an old `HSURF.om`) unrelated to any code defect?
+Two things were checked directly:
 
-Not yet established which. Worth diffing this repo's `HSURF` ingest logic
-against whatever produced production's current static file, and/or
-re-generating the self-hosted instance's `HSURF.om` from a fresh DWD
-download to see if the discrepancy persists.
+1. **Code parity**: `git diff upstream/main -- Sources/App/Icon/DownloadIconCommand.swift Sources/App/Domains/Gridable.swift` shows zero divergence — this repo's masking logic is byte-identical to upstream `main`.
+2. **Fresh DWD data, decoded directly** (via `cfgrib`/`eccodes`, bypassing any locally cached `.om` file entirely) for the latest published ICON-D2 time-invariant fields (`.../icon-d2/grib/00/hsurf/..._2026080400_..._hsurf.grib2.bz2` and the matching `fr_land` file):
+
+   | probe | current DWD `HSURF` | current DWD `FR_LAND` | this repo's code would mask to -999? |
+   |---|---|---|---|
+   | 47.90, 11.31 | 584.3 m | 0.129 | **yes** |
+   | 47.88, 11.31 | 582.4 m | 0.056 | **yes** |
+   | 47.92, 11.33 | 592.8 m | 0.324 | **yes** |
+   | 47.86, 11.29 | 584.2 m | 0.145 | **yes** |
+   | 47.90, 11.25 (land) | 670.8 m | 1.000 | no |
+
+   DWD's raw `HSURF` orography is actually correct at every lake cell (~584 m, matching reality). It's `FR_LAND` that's the problem: DWD's **current** land-fraction mask still classifies these cells as majority-water (well under this codebase's `< 0.5` threshold in `DownloadIconCommand.swift`), so **a brand-new ingest today, with unmodified upstream code, reproduces `elevation: 0.0`** — this is not stale local data.
+
+A local reproduction of the fix-by-regeneration attempt was also started and aborted before completion (DWD doesn't republish the time-invariant `HSURF`/`FR_LAND` files under every run timestamp, only occasionally — the naive `--run latest` picked a run with no published file at all, hit 404s, and was stopped; the original `HSURF.om` was restored from backup with no lasting effect). The direct grib decode above supersedes that attempt and is conclusive on its own.
+
+## Open question (revised)
+
+Given current DWD data + current upstream code both produce the bug, the
+question flips: **why doesn't production show it?** Candidates, not yet
+distinguished:
+- Production runs additional/different logic not present in this public
+  checkout (e.g. a DEM-based correction, a different/lower `FR_LAND`
+  threshold, or lake-specific handling).
+- Production's static elevation file is itself an *older* snapshot, from
+  before DWD's `FR_LAND` mask degraded for this area — i.e. production
+  being correct could be its own staleness accident, predating whatever
+  changed DWD's land-fraction data here, rather than evidence of a fix.
+- Production ingests from a different DWD product/grid variant (this
+  check used the `regular-lat-lon` remap; DWD also publishes an
+  `icosahedral` native-grid version — different regridding could shift a
+  borderline `FR_LAND` value, though 3 of the 4 measured values are far
+  enough below `0.5` that regridding alone seems unlikely to flip them).
+
+Not yet established which. Would need visibility into production's actual
+ingest history/pipeline to settle it, which isn't available from this
+side.
 
 ## Impact
 
