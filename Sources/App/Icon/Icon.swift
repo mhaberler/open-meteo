@@ -220,6 +220,28 @@ enum IconDomains: String, CaseIterable, GenericDomain {
         numberOfModelFullLevels + 1
     }
 
+    /// Lowest DWD-native full-level index (1 = top) for which the `clc` (cloud_cover)
+    /// model-level GRIB is actually published on opendata.dwd.de. Levels below this floor
+    /// 404 *permanently* — not a transient upload-timing race — so callers should skip
+    /// them rather than let Curl.swift retry until its multi-hour deadline.
+    ///
+    /// Empirically verified against a live opendata.dwd.de directory listing (checked
+    /// 2026-08-08, consistent across forecast hours 000/012/024 of the same run): the
+    /// global ICON domain only publishes `clc` for levels 39...120 (82 of 120 files);
+    /// levels 1...38 do not exist. Every other model-level variable (t, p, qv, qc, qi, u,
+    /// v) *is* published for the full 1...120 on this domain — the restriction is specific
+    /// to `clc` on the global domain. ICON-EU (74 levels) and ICON-D2 (65 levels) publish
+    /// `clc` unrestricted, so they return 1 (no floor).
+    var cloudCoverMinimumModelLevel: Int {
+        switch self {
+        case .iconEps, .icon, .iconEpsEnsembleMean:
+            return 39
+        case .iconEuEps, .iconEu, .iconEuEpsEnsembleMean,
+             .iconD2Eps, .iconD2_15min, .iconD2, .iconD2EpsEnsembleMean:
+            return 1
+        }
+    }
+
     /// HHL (half-level heights ASL) as single 3D static file [ny, nx, nHalf].
     /// (Level dimension last for efficient vertical column reads.)
     var hhlFileOm: OmFileType {

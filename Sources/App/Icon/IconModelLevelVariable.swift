@@ -119,7 +119,14 @@ struct IconModelLevelVariable: ModelLevelVariableRespresentable, IconVariableDow
 
     var storePreviousForecast: Bool { false }
 
-    func skipHour(hour: Int, domain: IconDomains, forDownload: Bool, run: Timestamp) -> Bool { false }
+    /// DWD does not publish `clc` (cloud_cover) below `domain.cloudCoverMinimumModelLevel`
+    /// on some domains (see that property's doc for the empirical basis) — the file
+    /// permanently 404s, so skip it before any HTTP request is made rather than let
+    /// Curl.swift retry for hours. Purely level-based: hour/forDownload/run are irrelevant
+    /// and intentionally ignored.
+    func skipHour(hour: Int, domain: IconDomains, forDownload: Bool, run: Timestamp) -> Bool {
+        variable == .cloud_cover && level < domain.cloudCoverMinimumModelLevel
+    }
 
     var multiplyAdd: (multiply: Float, add: Float)? {
         switch variable {
