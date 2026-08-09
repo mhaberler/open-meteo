@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
-"""Query ICON vertical wind (W) on native model half levels.
+"""Query ICON global vertical wind (W) on native model half levels.
 
-W (`wind_w_level<N>`) lives on DWD half levels 1..nFull+1 (icon-d2: 1..66,
-icon-eu: 1..75, icon global: 1..121). Half level N sits exactly at hhl[N];
-its height is exposed as `height_half_level<N>` (ASL) / `height_half_agl_level<N>`.
+W (`wind_w_level<N>`) lives on DWD half levels 1..nFull+1 (icon global: 1..121;
+icon-eu: 1..75; icon-d2: 1..66 — not used here). Half level N sits exactly at
+hhl[N]; its height is exposed as `height_half_level<N>` (ASL) /
+`height_half_agl_level<N>`.
+
+Pinned to `models=icon_global` so the server never falls back to icon-eu/icon-d2
+via the seamless mixer — useful on boxes that only ingest the global domain.
 
 Usage:
     python3 wind_w_profile.py [lat] [lon]
@@ -15,14 +19,15 @@ Env:
 import json
 import os
 import sys
+import urllib.error
 import urllib.parse
 import urllib.request
 
-BASE = os.environ.get("OM_API", "https://open-meteo.mah.priv.at").rstrip("/")
-LAT = float(sys.argv[1]) if len(sys.argv) > 2 else 47.8  # Austria / icon-d2 coverage
+BASE = os.environ.get("OM_API", "https://open-meteo-temp.mah.priv.at").rstrip("/")
+LAT = float(sys.argv[1]) if len(sys.argv) > 1 else 47.8
 LON = float(sys.argv[2]) if len(sys.argv) > 2 else 16.2
 
-N_HALF = 66  # icon-d2 half levels; lowest ~20 cover the boundary layer + low troposphere
+N_HALF = 121  # icon global half levels; lowest ~20 cover the boundary layer + low troposphere
 LEVELS = range(N_HALF - 20, N_HALF + 1)
 
 hourly = [f"wind_w_level{n}" for n in LEVELS]
@@ -34,18 +39,40 @@ url = f"{BASE}/v1/dwd-icon?" + urllib.parse.urlencode({
     "longitude": LON,
     "hourly": ",".join(hourly),
     "forecast_hours": 2,
+    "models": "icon_global",
     # explicit m/s: older servers apply the default kmh wind unit to wind_w as well
     "windspeed_unit": "ms",
 })
 
+def fail_with_body(prefix, status, content_type, body):
+    snippet = body.decode("utf-8", "replace")[:2000]
+    sys.exit(
+        f"{prefix}\n"
+        f"HTTP {status}  Content-Type: {content_type or '(none)'}  {len(body)} bytes\n"
+        f"--- body ---\n{snippet}"
+    )
+
+
 print(f"GET {url}\n")
-with urllib.request.urlopen(url) as r:
-    data = json.loads(r.read())
+try:
+    with urllib.request.urlopen(url, timeout=30) as r:
+        status = r.status
+        content_type = r.headers.get("Content-Type", "")
+        body = r.read()
+except urllib.error.HTTPError as e:
+    fail_with_body(f"Request failed: HTTP error from {BASE}", e.code, e.headers.get("Content-Type", ""), e.read())
+except urllib.error.URLError as e:
+    sys.exit(f"Could not reach {BASE}: {e.reason}")
+
+try:
+    data = json.loads(body)
+except json.JSONDecodeError as e:
+    fail_with_body(f"Response was not valid JSON ({e})", status, content_type, body)
 
 h = data["hourly"]
 hour_idx = 1  # one hour ahead
 print(f"Vertical wind profile at {data['latitude']},{data['longitude']} "
-      f"time={h['time'][hour_idx]} (icon-d2 half levels)\n")
+      f"time={h['time'][hour_idx]} (icon global half levels)\n")
 print(f"{'level':>5} {'height AGL [m]':>15} {'w [m/s]':>8}")
 
 prev_height = None
