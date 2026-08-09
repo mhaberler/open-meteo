@@ -119,7 +119,7 @@ final class Curl: Sendable {
                 logger.info("Downloading file \(url)")
             }
         }
-        let timeout = TimeoutTracker(logger: logger, deadline: deadline)
+        let timeout = TimeoutTracker(logger: logger, deadline: deadline, context: url)
 
         var i = 0
         while true {
@@ -172,7 +172,7 @@ final class Curl: Sendable {
                 if let wait = waitAfterLastModifiedBeforeDownload ?? waitAfterLastModified, case CurlError.downloadFailed(code: let status) = error, status.code == 404 {
                     /// if there was a 404, make sure to wait at least `waitAfterLastModified`
                     /// Happens if the server does not return `Last-Modified` date to wait before starting downloading
-                    logger.info("Got 404. Target delay \(wait) seconds. Sleeping for \(wait.rounded()) seconds now.")
+                    logger.info("Got 404 for \(url). Target delay \(wait) seconds. Sleeping for \(wait.rounded()) seconds now.")
                     try await Task.sleep(nanoseconds: UInt64(wait) * 1_000_000_000)
                 }
             }
@@ -214,7 +214,7 @@ final class Curl: Sendable {
 
         let stream = chunks.mapStream(nConcurrent: nConcurrent) { chunk in
             let range = "\(chunk.lowerBound)-\(chunk.upperBound - 1)"
-            let timeout = TimeoutTracker(logger: self.logger, deadline: deadline)
+            let timeout = TimeoutTracker(logger: self.logger, deadline: deadline, context: "\(url) range=\(range)")
             let chunkTimeOut = ExponentialBackOff(factor: .seconds(120), maximum: .seconds(300))
             var i = 0
             while true {
@@ -284,7 +284,7 @@ final class Curl: Sendable {
     /// Data is first downloaded to a tempoary tilde file and then moved to its final location atomically
     func download(url: String, toFile: String, bzip2Decode: Bool, range: String? = nil, minSize: Int? = nil, cacheDirectory: String? = Curl.cacheDirectory, nConcurrent: Int = 1, deadLineHours: Double? = nil, headers: [(String, String)] = []) async throws {
         let deadline = deadLineHours.map { Date().addingTimeInterval(TimeInterval($0 * 3600)) } ?? deadline
-        let timeout = TimeoutTracker(logger: logger, deadline: deadline)
+        let timeout = TimeoutTracker(logger: logger, deadline: deadline, context: url)
         while true {
             // Start the download and wait for the header
             let response = try await initiateDownload(url: url, range: range, minSize: minSize, cacheDirectory: cacheDirectory, deadline: deadline, nConcurrent: nConcurrent, waitAfterLastModifiedBeforeDownload: waitAfterLastModifiedBeforeDownload, headers: headers)
@@ -312,7 +312,7 @@ final class Curl: Sendable {
     /// `minSize` retry download if file is too small. Happens a lot with NOAA servers while files are uploaded while downloaded
     func downloadInMemoryAsync(url: String, range: String? = nil, minSize: Int?, bzip2Decode: Bool = false, nConcurrent: Int = 1, deadLineHours: Double? = nil, headers: [(String, String)] = [], quiet: Bool = false) async throws -> ByteBuffer {
         let deadline = deadLineHours.map { Date().addingTimeInterval(TimeInterval($0 * 3600)) } ?? deadline
-        let timeout = TimeoutTracker(logger: logger, deadline: deadline)
+        let timeout = TimeoutTracker(logger: logger, deadline: deadline, context: url)
         while true {
             // Start the download and wait for the header
             let response = try await initiateDownload(url: url, range: range, minSize: minSize, deadline: deadline, nConcurrent: nConcurrent, quiet: quiet, waitAfterLastModifiedBeforeDownload: waitAfterLastModifiedBeforeDownload, headers: headers)
