@@ -162,6 +162,9 @@ extension VariableAndPreviousDay: FlatBuffersVariable {
             return .init(variable: .snowfallHeight, previousDay: previousDay)
         case .surface_pressure:
             return .init(variable: .surfacePressure, previousDay: previousDay)
+        case .surface_pressure_wmo:
+            // No dedicated member in the SDK variable enum
+            return .init(variable: .undefined, previousDay: previousDay)
         case .surface_temperature:
             return .init(variable: .surfaceTemperature, previousDay: previousDay)
         case .temperature_100m:

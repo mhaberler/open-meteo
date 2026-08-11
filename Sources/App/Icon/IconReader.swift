@@ -426,7 +426,7 @@ struct IconReader: GenericReaderDerived, GenericReaderProtocol {
                 } else {
                     try await prefetchData(raw: .snowfall_water_equivalent, time: time)
                 }
-            case .surface_pressure:
+            case .surface_pressure, .surface_pressure_wmo:
                 try await prefetchData(raw: .pressure_msl, time: time)
                 try await prefetchData(raw: .temperature_2m, time: time)
             case .shortwave_radiation_instant:
@@ -613,6 +613,10 @@ struct IconReader: GenericReaderDerived, GenericReaderProtocol {
                 let temperature = try await get(raw: .temperature_2m, time: time).data
                 let pressure = try await get(raw: .pressure_msl, time: time)
                 return DataAndUnit(Meteorology.surfacePressure(temperature: temperature, pressure: pressure.data, elevation: reader.targetElevation), pressure.unit)
+            case .surface_pressure_wmo:
+                let temperature = try await get(raw: .temperature_2m, time: time).data
+                let pressure = try await get(raw: .pressure_msl, time: time)
+                return DataAndUnit(Meteorology.surfacePressureWmo(temperature: temperature, pressure: pressure.data, elevation: reader.targetElevation), pressure.unit)
             case .shortwave_radiation_instant:
                 let sw = try await get(derived: .surface(.shortwave_radiation), time: time)
                 let factor = Zensun.backwardsAveragedToInstantFactor(time: time.time, latitude: reader.modelLat, longitude: reader.modelLon)

@@ -60,6 +60,26 @@ enum Meteorology {
         return pressure / factor
     }
     
+    /// Calculate surface pressure using the WMO/ICAO pressure reduction.
+    /// Unlike `surfacePressure`, the barometric formula is anchored on the mean temperature of the
+    /// layer between sea level and `elevation` instead of the ICAO standard atmosphere.
+    /// Tm = (T + T0') / 2 with the fictive sea level temperature T0' = T + 0.0065 * h
+    /// p(h) = pmsl * exp(-g * h / (R * Tm))
+    /// `temperature` in celsius, `pressure` in hPa, `elevation` in meter above sea level
+    static func surfacePressureWmo(temperature: [Float], pressure: [Float], elevation: Float) -> [Float] {
+        precondition(temperature.count == pressure.count)
+        let elevation = elevation.isNaN ? 0 : elevation
+        /// Gravitational acceleration
+        let g: Float = 9.80665
+        /// Specific gas constant for dry air
+        let R: Float = 287.05
+        return zip(temperature, pressure).map { t, p -> Float in
+            /// Mean temperature of the layer in kelvin
+            let tm = t + 273.15 + 0.00325 * elevation
+            return p * expf(-g * elevation / (R * tm))
+        }
+    }
+
     /// Estimate elevation from sea and surface level pressure
     /// Psurf = Psea / ((1 - (0.0065 * h) / (t + 273.15 + 0.0065 * h))^ -5.25578129287)
     /// h = (153.846 (t (-(Psurf/Psea)^0.1902666690786014) - 273.15 (Psurf/Psea)^0.1902666690786014 + t + 273.15))/(Psurf/Psea)^0.1902666690786014
