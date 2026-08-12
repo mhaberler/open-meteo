@@ -189,6 +189,8 @@ extension IconSurfaceVariable: IconVariableDownloadable {
             return domain == .iconD2 ? ("w_ctmax", "single-level", nil) : nil // only in icon d2
         case .visibility:
             return domain == .icon ? nil : ("vis", "single-level", nil) // not in icon global
+        case .cloud_base:
+            return domain == .icon ? nil : ("ceiling", "single-level", nil) // not in icon global
         }
     }
 

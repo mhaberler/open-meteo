@@ -135,7 +135,12 @@ enum IconSurfaceVariable: String, CaseIterable, GenericVariableMixable, Sendable
     case snow_depth
 
     /// Ceiling is that height above MSL (in m), where the large scale cloud coverage (more precise: scale and sub-scale, but without the convective contribution) first exceeds 50% when starting from ground.
-    // case ceiling // not in global
+    /// Stored raw: above MSL, not corrected to above ground level (same as `convective_cloud_base`).
+    /// Clear sky is NOT encoded as missing: DWD fills it with the top of the scan range (~16 km),
+    /// so a "ceiling below X" test works without special casing. The GRIB2 bitmap only masks
+    /// out-of-domain grid points, exactly like every other field, and is left as NaN.
+    /// Only icon-eu + d2
+    case cloud_base
 
     /// Sensible heat net flux at surface (average since model start)
     case sensible_heat_flux
@@ -219,6 +224,7 @@ enum IconSurfaceVariable: String, CaseIterable, GenericVariableMixable, Sendable
         case .cloud_cover_high: return 1
         case .convective_cloud_top: return 0.1
         case .convective_cloud_base: return 0.1
+        case .cloud_base: return 0.1 // 10 metre resolution, same as convective cloud base
         case .precipitation: return 10
         case .weather_code: return 1
         case .wind_v_component_10m: return 10
@@ -277,6 +283,7 @@ enum IconSurfaceVariable: String, CaseIterable, GenericVariableMixable, Sendable
         case .cloud_cover_high: return .percentage
         case .convective_cloud_top: return .metre
         case .convective_cloud_base: return .metre
+        case .cloud_base: return .metre
         case .precipitation: return .millimetre
         case .weather_code: return .wmoCode
         case .wind_v_component_10m: return .metrePerSecond
@@ -350,6 +357,8 @@ enum IconSurfaceVariable: String, CaseIterable, GenericVariableMixable, Sendable
         case .convective_cloud_top:
             return .hermite(bounds: 0...10e9)
         case .convective_cloud_base:
+            return .hermite(bounds: 0...10e9)
+        case .cloud_base:
             return .hermite(bounds: 0...10e9)
         case .pressure_msl:
             return .hermite(bounds: nil)

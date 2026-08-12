@@ -93,6 +93,53 @@ import OmFileFormat
         }
     }
 
+    /// `heidiVars` is the curated 2D surface set: pure single-level surface variables, no model-level
+    /// or pressure-level leakage, and a single domain-independent list. Variables DWD does not publish
+    /// for a given domain are not filtered out of the list — they are skipped at download time by
+    /// `getVarAndLevel` returning nil, which is what keeps Curl from retry-looping on 404s.
+    @Test func heidiVarsIsCuratedSurfaceSet() {
+        let expected: Set<IconSurfaceVariable> = [
+            .wind_gusts_10m, .wind_u_component_10m, .wind_v_component_10m,
+            .visibility, .pressure_msl, .weather_code,
+            .precipitation, .rain, .showers,
+            .snowfall_water_equivalent, .snowfall_convective_water_equivalent, .snowfall_height,
+            .temperature_2m, .relative_humidity_2m,
+            .cloud_cover, .cloud_cover_low, .cloud_cover_mid, .cloud_cover_high,
+            .cloud_base, .freezing_level_height,
+            .cape, .convective_inhibition, .lightning_potential,
+            .convective_cloud_base, .convective_cloud_top
+        ]
+        for domain in [IconDomains.iconD2, .iconEu, .icon] {
+            let vars = DownloadIconCommand.VariableGroup.heidiVars.variables(domain: domain)
+            let surface = vars.compactMap { $0 as? IconSurfaceVariable }
+            #expect(surface.count == vars.count)
+            #expect(Set(surface) == expected)
+            #expect(surface.count == expected.count) // no duplicates
+            // never a model-level or pressure-level request
+            #expect(surface.allSatisfy { ($0.getVarAndLevel(domain: domain)?.cat ?? "single-level") == "single-level" })
+        }
+
+        // CEILING is only published for icon-eu and icon-d2, mapped to the open-meteo `cloud_base` name
+        #expect(IconSurfaceVariable.cloud_base.getVarAndLevel(domain: .iconD2)?.variable == "ceiling")
+        #expect(IconSurfaceVariable.cloud_base.getVarAndLevel(domain: .iconEu)?.variable == "ceiling")
+        #expect(IconSurfaceVariable.cloud_base.getVarAndLevel(domain: .iconD2)?.cat == "single-level")
+        #expect(IconSurfaceVariable.cloud_base.getVarAndLevel(domain: .icon) == nil)
+
+        // The group is shared, but what is actually downloadable shrinks on the coarser domains.
+        func downloadable(_ domain: IconDomains) -> Int {
+            DownloadIconCommand.VariableGroup.heidiVars.variables(domain: domain)
+                .filter { $0.getVarAndLevel(domain: domain) != nil }.count
+        }
+        // global publishes neither ceiling, cin_ml, snowlmt, vis nor lpi
+        let notInGlobal: [IconSurfaceVariable] = [.cloud_base, .convective_inhibition, .snowfall_height, .visibility, .lightning_potential]
+        #expect(notInGlobal.allSatisfy { $0.getVarAndLevel(domain: .icon) == nil })
+        #expect(downloadable(.icon) == expected.count - notInGlobal.count) // 20
+        // icon-eu has everything except lpi, which is icon-d2 only
+        #expect(IconSurfaceVariable.lightning_potential.getVarAndLevel(domain: .iconEu) == nil)
+        #expect(downloadable(.iconEu) == expected.count - 1) // 24
+        #expect(downloadable(.iconD2) == expected.count)     // 25
+    }
+
     /// HHL column cache is a reference type: a stored column is shared across value copies of the reader,
     /// so the static `hhl.om` is read once, not per height/RH/dew-point query.
     @Test func hhlColumnCacheMemoisesByReference() {

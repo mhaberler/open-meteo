@@ -10,36 +10,58 @@ fields — a lighter-weight alternative to `--group surface` (which pulls all
 
 ## Variables
 
-Requested: `wind_gusts_10m, visibility, pressure_msl, weather_code,
-precipitation, rain, showers, snowfall, temperature_2m,
-relative_humidity_2m, dewpoint_2m, surface_pressure,
-wet_bulb_temperature_2m, cape, lightning_potential,
-convective_cloud_base, convective_cloud_top`.
-
-All of these already existed as downloadable `IconSurfaceVariable` cases
-with DWD GRIB mappings — no new variables were invented. The group downloads
-15 raw variables:
+The group downloads 25 raw variables:
 
 ```swift
 case .heidiVars:
     let vars: [IconSurfaceVariable] = [
-        .wind_gusts_10m, .visibility, .pressure_msl, .weather_code,
+        .wind_gusts_10m, .wind_u_component_10m, .wind_v_component_10m,
+        .visibility, .pressure_msl, .weather_code,
         .precipitation, .rain, .showers,
         .snowfall_water_equivalent, .snowfall_convective_water_equivalent,
+        .snowfall_height,
         .temperature_2m, .relative_humidity_2m,
-        .cape, .lightning_potential,
+        .cloud_cover, .cloud_cover_low, .cloud_cover_mid, .cloud_cover_high,
+        .cloud_base, .freezing_level_height,
+        .cape, .convective_inhibition, .lightning_potential,
         .convective_cloud_base, .convective_cloud_top
     ]
     return vars
 ```
 
-Two nuances baked into that list:
+Only `cloud_base` (DWD `CEILING`) had to be added to `IconSurfaceVariable`;
+everything else already existed as a downloadable case with a DWD GRIB
+mapping. The DWD → open-meteo names for the second batch are:
+
+| DWD GRIB | open-meteo name | domains |
+|---|---|---|
+| `HZEROCL` | `freezing_level_height` | icon, icon-eu, icon-d2 |
+| `CLCT` / `CLCL` / `CLCM` / `CLCH` | `cloud_cover` / `_low` / `_mid` / `_high` | all |
+| `U_10M` / `V_10M` | `wind_u_component_10m` / `wind_v_component_10m` | all |
+| `CIN_ML` | `convective_inhibition` | icon-eu, icon-d2 |
+| `CEILING` | `cloud_base` | icon-eu, icon-d2 |
+| `SNOWLMT` | `snowfall_height` | icon-eu, icon-d2 |
+
+Nuances baked into that list:
 
 - **`dewpoint_2m`, `surface_pressure`, `wet_bulb_temperature_2m` are omitted
   on purpose.** They're derived on read in `IconReader.swift` from
   `temperature_2m` + `relative_humidity_2m` (+ `pressure_msl` for
   `surface_pressure`), all of which are already in the list — so they
-  become queryable automatically with no extra download.
+  become queryable automatically with no extra download. The same holds for
+  `wind_speed_10m` / `wind_direction_10m`, derived from the u/v components.
+- **`snowfall_height` is included even though it is rarely queried directly.**
+  The ingest uses it to correct DWD weather codes and to split rain from snow
+  (the `weather_code` / `rain` / `snowfall_water_equivalent` post-processing
+  blocks in `DownloadIconCommand.swift`). Without it those corrections
+  silently fall back to a temperature-only rule, and the group's
+  `weather_code`, `rain` and `snowfall` would disagree with a full
+  `--group surface` run.
+- **The list is domain-independent.** `cloud_base`, `convective_inhibition`,
+  `snowfall_height`, `visibility` and `lightning_potential` are not published
+  for every domain; `getVarAndLevel` returns nil there and the download is
+  skipped silently, so nothing 404-loops. Downloadable counts: **25 on
+  icon-d2, 24 on icon-eu** (no `lpi`), **20 on icon global** (none of the five).
 - **`snowfall_convective_water_equivalent` is included even though it's
   never persisted to disk.** `DownloadIconCommand.swift` merges it into
   `snowfall_water_equivalent` at ingest time and explicitly skips writing it
@@ -50,18 +72,41 @@ Two nuances baked into that list:
   list (`GenericVariableHandle.swift:56`) that triggers `meta.json` writes
   automatically.
 
+### `cloud_base` semantics
+
+Two consumer-visible properties, both verified against live DWD GRIB rather
+than assumed:
+
+- **Metres above MSL, not above ground.** Compared point-by-point against
+  `HSURF` over all 525,072 valid icosahedral cells, `CEILING − HSURF` is never
+  negative (min +9.8 m, 1st percentile +562 m) across terrain reaching 4080 m.
+  It is published raw and uncorrected, consistent with MeteoSwiss's
+  `cloud_base` (also `CEILING`) and with ICON's own `convective_cloud_base`
+  (`HBAS_CON`/`HBAS_SC`, also MSL). Note that UKMO's `cloud_base` is AGL —
+  that cross-model inconsistency pre-dates this group.
+- **Clear sky is a large value, not null.** DWD does *not* mark "no ceiling"
+  as missing: where `CLCT == 0` the field is filled with the top of the scan
+  range (5th percentile 16,000 m, median 16,164 m over 358k clear points on
+  the icon-d2 grid) and is never bitmap-missing there. So a
+  `cloud_base < threshold` test behaves correctly with no special casing.
+  The GRIB2 bitmap (16.7% of the regular-lat-lon grid) only masks
+  out-of-domain points — `CLCT` carries the identical mask — and is left as
+  NaN like every other field.
+
 ## Storage, relative to `hiresTemp`
 
 Both groups share the same chunking/compression/retention machinery, so
-file count is the reliable comparison:
+file count is the reliable comparison. `heidiVars` persists one file fewer
+than it downloads (`snowfall_convective_water_equivalent` is merged, not
+written):
 
 | Domain | grid points | `hiresTemp` files (8×full + half) | `heidiVars` files | ratio |
 |---|---|---|---|---|
-| icon-d2 | 906,390 | 586 | 15 | **2.6%** |
-| icon-eu | 904,689 | 667 | 15 | **2.3%** |
-| icon (global) | 4,148,639 | 1,081 | 15 | **1.4%** |
+| icon-d2 | 906,390 | 586 | 24 | **4.1%** |
+| icon-eu | 904,689 | 667 | 23 | **3.4%** |
+| icon (global) | 4,148,639 | 1,081 | 19 | **1.8%** |
 
-i.e. `heidiVars` adds roughly 1.5–2.5% of the disk footprint the
+i.e. `heidiVars` adds roughly 2–4% of the disk footprint the
 model-level (`hiresTemp`) work already added, per domain.
 
 ## Proposed crontab entries
@@ -103,7 +148,13 @@ sudo -u openmeteo-api bash -c 'DATA_DIRECTORY=/open-meteo/ /usr/local/bin/openme
 
 ## Deployment
 
-Implemented in commit `21ba9716` (`feat(icon): add heidiVars curated
-surface variable download group`) on branch `heidivars`. Deployed via
-`build/deploy-release.sh` — confirmed the running `/usr/local/bin/openmeteo-api`
-binary matches the current release build and HEAD commit (md5 `ff82bc4d`).
+Originally implemented in commit `21ba9716` (`feat(icon): add heidiVars curated
+surface variable download group`) on branch `heidivars`, with 15 variables.
+Deployed via `build/deploy-release.sh` — confirmed the running
+`/usr/local/bin/openmeteo-api` binary matches the current release build and
+HEAD commit (md5 `ff82bc4d`).
+
+The second batch (`HZEROCL`, `CEILING`, `CLCT`/`CLCL`/`CLCM`/`CLCH`,
+`U_10M`/`V_10M`, `CIN_ML`, plus `SNOWLMT`) brings the group to 25 variables
+and is **not deployed yet** — the release binary still has to be rebuilt and
+rolled out before the crontab entries above start picking these up.

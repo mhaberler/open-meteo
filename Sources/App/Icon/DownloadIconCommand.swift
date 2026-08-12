@@ -78,10 +78,19 @@ struct DownloadIconCommand: AsyncCommand {
             case .heidiVars:
                 // dewpoint_2m, surface_pressure, wet_bulb_temperature_2m are derived on read
                 // from temperature_2m/relative_humidity_2m/pressure_msl below; no raw download needed.
+                // wind_speed_10m/wind_direction_10m are likewise derived from the u/v components.
                 // snowfall_convective_water_equivalent is merged into snowfall_water_equivalent at
                 // ingest and not persisted on its own, but must still be downloaded here.
+                // snowfall_height is not consumed directly, but the ingest uses it to correct DWD
+                // weather codes and to split rain/snow — without it those fall back to a
+                // temperature-only rule and this group would disagree with a full `surface` run.
+                // The list is shared across domains: cloud_base, convective_inhibition,
+                // snowfall_height, visibility and lightning_potential are not published for every
+                // domain and are skipped silently by `getVarAndLevel` returning nil.
                 let vars: [IconSurfaceVariable] = [
                     .wind_gusts_10m,
+                    .wind_u_component_10m,
+                    .wind_v_component_10m,
                     .visibility,
                     .pressure_msl,
                     .weather_code,
@@ -90,9 +99,17 @@ struct DownloadIconCommand: AsyncCommand {
                     .showers,
                     .snowfall_water_equivalent,
                     .snowfall_convective_water_equivalent,
+                    .snowfall_height,
                     .temperature_2m,
                     .relative_humidity_2m,
+                    .cloud_cover,
+                    .cloud_cover_low,
+                    .cloud_cover_mid,
+                    .cloud_cover_high,
+                    .cloud_base,
+                    .freezing_level_height,
                     .cape,
+                    .convective_inhibition,
                     .lightning_potential,
                     .convective_cloud_base,
                     .convective_cloud_top
