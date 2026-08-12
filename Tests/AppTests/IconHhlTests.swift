@@ -53,11 +53,12 @@ import OmFileFormat
     }
 
     /// `hires-temp` is the unified model-level profile: every full level 1…N (top..surface)
-    /// carrying exactly the five full-level variables, plus vertical wind W on every half
+    /// carrying exactly the eight full-level variables, plus vertical wind W on every half
     /// level 1…N+1. Locks in the FL180-split removal.
     @Test func hiresTempCoversAllLevels() {
         let expectedFullVars: Set<IconModelLevelVariableType> = [
-            .wind_u_component, .wind_v_component, .temperature, .specific_humidity, .pressure
+            .wind_u_component, .wind_v_component, .temperature, .specific_humidity, .pressure,
+            .cloud_water, .cloud_ice, .cloud_cover
         ]
         for domain in [IconDomains.iconD2, .iconEu, .icon] {
             let n = domain.numberOfModelFullLevels
