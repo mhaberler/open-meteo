@@ -116,6 +116,12 @@ enum ForecastSurfaceVariable: String, GenericVariableMixable {
     case air_density_2m
     case snowfall_height
     case surface_pressure
+    /// Raw model surface pressure (ICON only). Unlike `surface_pressure`, valid at the model's own
+    /// orography and does not follow the `elevation=` request parameter. Null on other models.
+    case surface_pressure_model
+    /// Raw, unmasked model orography as a time series (ICON only). Unlike the response's `elevation`
+    /// field, not masked to -999 over sea. Null on other models.
+    case model_elevation
     case surface_temperature
     case temperature_100m
     case temperature_120m

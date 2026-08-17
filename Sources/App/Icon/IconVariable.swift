@@ -199,11 +199,24 @@ enum IconSurfaceVariable: String, CaseIterable, GenericVariableMixable, Sendable
 
     case visibility
 
+    /// Raw model surface pressure (DWD `PS`), valid at the model's own orography — unlike the derived
+    /// `surface_pressure` (see `IconReader.swift`), it does not follow the `elevation=` request parameter.
+    /// Only downloaded on the deterministic domains; the EPS domains already fetch this GRIB under the
+    /// `pressure_msl` name (see `IconVariableDownloadable.getVarAndLevel`).
+    case surface_pressure_model
+
+    /// Raw, unmasked model orography (DWD `HSURF`) as a time series, one value per forecast hour.
+    /// Not fetched per-hour: `DownloadIconCommand.downloadIcon` fetches it once per run and writes the
+    /// same array to every timestep. Unlike the API's `elevation` response field (which is masked to
+    /// -999 over open sea, see `convertSurfaceElevation`), this is the true model orography including
+    /// sea points (~0 m) -- the two intentionally disagree over water.
+    case model_elevation
+
     var storePreviousForecast: Bool {
         switch self {
         case .temperature_2m, .relative_humidity_2m: return true
         case .showers, .precipitation, .snowfall_water_equivalent: return true
-        case .pressure_msl: return true
+        case .pressure_msl, .surface_pressure_model: return true
         case .cloud_cover: return true
         case .diffuse_radiation, .direct_radiation: return true
         case .wind_gusts_10m, .wind_u_component_10m, .wind_v_component_10m: return true
@@ -270,6 +283,8 @@ enum IconSurfaceVariable: String, CaseIterable, GenericVariableMixable, Sendable
         case .updraft:
             return 100
         case .visibility: return 0.05 // 50 meter
+        case .surface_pressure_model: return 10
+        case .model_elevation: return 1
         }
     }
 
@@ -333,6 +348,10 @@ enum IconSurfaceVariable: String, CaseIterable, GenericVariableMixable, Sendable
         case .updraft:
             return .metrePerSecondNotUnitConverted
         case .visibility:
+            return .metre
+        case .surface_pressure_model:
+            return .hectopascal
+        case .model_elevation:
             return .metre
         }
     }
@@ -441,6 +460,10 @@ enum IconSurfaceVariable: String, CaseIterable, GenericVariableMixable, Sendable
         case .updraft:
             return .hermite(bounds: nil)
         case .visibility:
+            return .linear
+        case .surface_pressure_model:
+            return .hermite(bounds: nil)
+        case .model_elevation:
             return .linear
         }
     }

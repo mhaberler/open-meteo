@@ -34,21 +34,28 @@ struct DownloadIconCommand: AsyncCommand {
         /// Variable set downloaded for this group. Extracted so the group semantics can be unit-tested.
         /// `modelLevel` keeps upstream semantics (surface vars flagged model-level); `hiresTemp` is the
         /// full model-level profile (u/v + t + p + qv) over all levels — rh/dew_point are derived on-read.
+        /// Only reachable through `--group heidiVars`. `model_elevation` is a constant field (odd to
+        /// write into a routine `--group surface` run) and `surface_pressure_model` is opt-in until its
+        /// accuracy is measured against the derived `surface_pressure` (see HEIDIVARS.md).
+        static let heidiVarsOnly: Set<IconSurfaceVariable> = [.model_elevation, .surface_pressure_model]
+
         func variables(domain: IconDomains) -> [any IconVariableDownloadable] {
             switch self {
             case .all:
-                return IconSurfaceVariable.allCases + domain.levels.reversed().flatMap { level in
+                return IconSurfaceVariable.allCases.filter {
+                    !Self.heidiVarsOnly.contains($0)
+                } + domain.levels.reversed().flatMap { level in
                     IconPressureVariableType.allCases.map { variable in
                         IconPressureVariable(variable: variable, level: level)
                     }
                 }
             case .surface:
                 return IconSurfaceVariable.allCases.filter {
-                    !($0.getVarAndLevel(domain: domain)?.cat == "model-level")
+                    !($0.getVarAndLevel(domain: domain)?.cat == "model-level") && !Self.heidiVarsOnly.contains($0)
                 }
             case .surfaceAndPressure:
                 return IconSurfaceVariable.allCases.filter {
-                    !($0.getVarAndLevel(domain: domain)?.cat == "model-level")
+                    !($0.getVarAndLevel(domain: domain)?.cat == "model-level") && !Self.heidiVarsOnly.contains($0)
                 } + domain.levels.reversed().flatMap { level in
                     IconPressureVariableType.allCases.map { variable in
                         IconPressureVariable(variable: variable, level: level)
@@ -76,8 +83,8 @@ struct DownloadIconCommand: AsyncCommand {
                     IconModelLevelVariable(variable: .wind_w, level: level)
                 }
             case .heidiVars:
-                // dewpoint_2m, surface_pressure, wet_bulb_temperature_2m are derived on read
-                // from temperature_2m/relative_humidity_2m/pressure_msl below; no raw download needed.
+                // dewpoint_2m, wet_bulb_temperature_2m are derived on read from
+                // temperature_2m/relative_humidity_2m below; no raw download needed.
                 // wind_speed_10m/wind_direction_10m are likewise derived from the u/v components.
                 // snowfall_convective_water_equivalent is merged into snowfall_water_equivalent at
                 // ingest and not persisted on its own, but must still be downloaded here.
@@ -87,12 +94,19 @@ struct DownloadIconCommand: AsyncCommand {
                 // The list is shared across domains: cloud_base, convective_inhibition,
                 // snowfall_height, visibility and lightning_potential are not published for every
                 // domain and are skipped silently by `getVarAndLevel` returning nil.
+                //
+                // surface_pressure_model (raw DWD PS) and model_elevation (raw unmasked HSURF, written
+                // once per run) are additive to the existing derived `surface_pressure`, not a
+                // replacement for it -- the derived value follows the `elevation=` request parameter,
+                // the raw one is valid at the model's own orography. See HEIDIVARS.md.
                 let vars: [IconSurfaceVariable] = [
                     .wind_gusts_10m,
                     .wind_u_component_10m,
                     .wind_v_component_10m,
                     .visibility,
                     .pressure_msl,
+                    .surface_pressure_model,
+                    .model_elevation,
                     .weather_code,
                     .precipitation,
                     .rain,
@@ -176,6 +190,24 @@ struct DownloadIconCommand: AsyncCommand {
         "Download a specified icon model run"
     }
 
+    /// Download raw (unmasked) HSURF for `domain`/`run`, sea points included at their true (~0 m)
+    /// elevation. Shared by `convertSurfaceElevation` (which masks it to -999 over sea for the static
+    /// `elevation` field) and the heidiVars `model_elevation` time series (which does not mask it, so
+    /// the two intentionally disagree over water -- see `IconVariable.model_elevation`).
+    func downloadHsurfRaw(domain: IconDomains, run: Timestamp, curl: Curl, cdo: CdoHelper) async throws -> [Float] {
+        let domainPrefix = "\(domain.rawValue)_\(domain.region)"
+        let gridType = cdo.needsRemapping ? "icosahedral" : "regular-lat-lon"
+        let serverPrefix = "http://opendata.dwd.de/weather/nwp/\(domain.rawValue)/grib/\(run.hour.zeroPadded(len: 2))/"
+        let dateStr = run.format_YYYYMMddHH
+
+        // surface elevation
+        // https://opendata.dwd.de/weather/nwp/icon/grib/00/hsurf/icon_global_icosahedral_time-invariant_2022072400_HSURF.grib2.bz2
+        let additionalTimeString = (domain == .iconD2 || domain == .iconD2Eps) ? "_000_0" : ""
+        let variableName = (domain == .iconD2 || domain == .iconD2Eps || domain == .iconEuEps || domain == .iconEps) ? "hsurf" : "HSURF"
+        let file = "\(serverPrefix)hsurf/\(domainPrefix)_\(gridType)_time-invariant_\(dateStr)\(additionalTimeString)_\(variableName).grib2.bz2"
+        return try await cdo.downloadAndRemap(file)[0].data.data
+    }
+
     /**
      Convert surface elevation. Out of grid positions are NaN. Sea grid points are -999.
      */
@@ -201,13 +233,8 @@ struct DownloadIconCommand: AsyncCommand {
         let serverPrefix = "http://opendata.dwd.de/weather/nwp/\(domain.rawValue)/grib/\(run.hour.zeroPadded(len: 2))/"
         let dateStr = run.format_YYYYMMddHH
 
-        // surface elevation
-        // https://opendata.dwd.de/weather/nwp/icon/grib/00/hsurf/icon_global_icosahedral_time-invariant_2022072400_HSURF.grib2.bz2
-
         let additionalTimeString = (domain == .iconD2 || domain == .iconD2Eps) ? "_000_0" : ""
-        let variableName = (domain == .iconD2 || domain == .iconD2Eps || domain == .iconEuEps || domain == .iconEps) ? "hsurf" : "HSURF"
-        let file = "\(serverPrefix)hsurf/\(domainPrefix)_\(gridType)_time-invariant_\(dateStr)\(additionalTimeString)_\(variableName).grib2.bz2"
-        var hsurf = try await cdo.downloadAndRemap(file)[0].data.data
+        var hsurf = try await downloadHsurfRaw(domain: domain, run: run, curl: curl, cdo: cdo)
 
         let variableName2 = (domain == .iconD2 || domain == .iconD2Eps || domain == .iconEuEps || domain == .iconEps) ? "fr_land" : "FR_LAND"
         let file2 = "\(serverPrefix)fr_land/\(domainPrefix)_\(gridType)_time-invariant_\(dateStr)\(additionalTimeString)_\(variableName2).grib2.bz2"
@@ -350,7 +377,17 @@ struct DownloadIconCommand: AsyncCommand {
             }
             return elevation
         }()
-        
+
+        /// Raw (unmasked) model orography for the `model_elevation` heidiVars time series. Fetched once
+        /// per run (HSURF is `time-invariant`, not per-forecast-hour) and written into every timestep
+        /// below. `nil` unless `model_elevation` is actually requested.
+        let hsurfRaw: [Float]? = try await {
+            guard variables.contains(where: { ($0 as? IconSurfaceVariable) == .model_elevation }) else {
+                return nil
+            }
+            return try await downloadHsurfRaw(domain: domain, run: run, curl: curl, cdo: cdo)
+        }()
+
         var forecastSteps = domain.getDownloadForecastSteps(run: run.hour)
         if let maxForecastHour {
             forecastSteps = forecastSteps.filter { $0 <= maxForecastHour }
@@ -363,10 +400,14 @@ struct DownloadIconCommand: AsyncCommand {
 
             let storage = VariablePerMemberStorage<IconSurfaceVariable>()
             let storage15min = VariablePerMemberStorage<IconSurfaceVariable>()
-            
+
             let writer = OmSpatialTimestepWriter(domain: domain, run: run, time: timestamp, storeOnDisk: !isEnsemble, realm: realm, logger: logger, ensembleMeanDomain: domain.ensembleMeanDomain)
             let writerProbabilities = isEnsemble ? OmSpatialTimestepWriter(domain: domain, run: run, time: timestamp, storeOnDisk: true, realm: nil, logger: logger) : nil
             let writer15Min = OmSpatialMultistepWriter(domain: IconDomains.iconD2_15min, run: run, storeOnDisk: true, realm: nil, logger: logger)
+
+            if let hsurfRaw {
+                try await writer.write(member: 0, variable: IconSurfaceVariable.model_elevation, data: hsurfRaw)
+            }
 
             try await variables.foreachConcurrent(nConcurrent: concurrent) { variable in
                 if variable.skipHour(hour: hour, domain: domain, forDownload: true, run: run) {

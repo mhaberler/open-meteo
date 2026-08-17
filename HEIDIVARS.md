@@ -10,13 +10,14 @@ fields — a lighter-weight alternative to `--group surface` (which pulls all
 
 ## Variables
 
-The group downloads 25 raw variables:
+The group downloads 27 raw variables:
 
 ```swift
 case .heidiVars:
     let vars: [IconSurfaceVariable] = [
         .wind_gusts_10m, .wind_u_component_10m, .wind_v_component_10m,
-        .visibility, .pressure_msl, .weather_code,
+        .visibility, .pressure_msl, .surface_pressure_model, .model_elevation,
+        .weather_code,
         .precipitation, .rain, .showers,
         .snowfall_water_equivalent, .snowfall_convective_water_equivalent,
         .snowfall_height,
@@ -29,9 +30,9 @@ case .heidiVars:
     return vars
 ```
 
-Only `cloud_base` (DWD `CEILING`) had to be added to `IconSurfaceVariable`;
-everything else already existed as a downloadable case with a DWD GRIB
-mapping. The DWD → open-meteo names for the second batch are:
+Only `cloud_base` (DWD `CEILING`) had to be added to `IconSurfaceVariable` for
+the first batch; everything else already existed as a downloadable case with
+a DWD GRIB mapping. The DWD → open-meteo names for the second batch are:
 
 | DWD GRIB | open-meteo name | domains |
 |---|---|---|
@@ -42,14 +43,42 @@ mapping. The DWD → open-meteo names for the second batch are:
 | `CEILING` | `cloud_base` | icon-eu, icon-d2 |
 | `SNOWLMT` | `snowfall_height` | icon-eu, icon-d2 |
 
+A third batch adds raw model surface pressure and orography, both new
+`IconSurfaceVariable` cases:
+
+| DWD GRIB | open-meteo name | domains | how it's fetched |
+|---|---|---|---|
+| `PS` | `surface_pressure_model` | icon, icon-eu, icon-d2 | generic per-hour path, same as `pressure_msl` |
+| `HSURF` | `model_elevation` | icon, icon-eu, icon-d2 | once per run, see below |
+
 Nuances baked into that list:
 
-- **`dewpoint_2m`, `surface_pressure`, `wet_bulb_temperature_2m` are omitted
-  on purpose.** They're derived on read in `IconReader.swift` from
-  `temperature_2m` + `relative_humidity_2m` (+ `pressure_msl` for
-  `surface_pressure`), all of which are already in the list — so they
-  become queryable automatically with no extra download. The same holds for
+- **`dewpoint_2m`, `wet_bulb_temperature_2m` are omitted on purpose.**
+  They're derived on read in `IconReader.swift` from `temperature_2m` +
+  `relative_humidity_2m`, both already in the list, so they become
+  queryable automatically with no extra download. The same holds for
   `wind_speed_10m` / `wind_direction_10m`, derived from the u/v components.
+- **`surface_pressure_model` sits alongside the existing derived
+  `surface_pressure`, it does not replace it.** `surface_pressure` (see
+  `IconReader.swift`) is a barometric reduction of `pressure_msl` using
+  `temperature_2m` and the *requested* `elevation=` parameter — it follows
+  the caller anywhere on the grid cell's vertical column. `surface_pressure_model`
+  is DWD's raw `PS`, valid only at the model's own orography, and
+  `isElevationCorrectable == false`, so `elevation=` has no effect on it.
+  Over steep terrain (e.g. the Alps) the two diverge measurably; see
+  `examples/heidivars.py` for a live comparison. Which one should be the
+  API's default `surface_pressure` is an open question — not resolved by
+  this change.
+- **`model_elevation` is the *unmasked* counterpart to the static `elevation`
+  API field, not a duplicate of it.** `convertSurfaceElevation` already runs
+  before every group and writes a static, sea-masked (-999) HSURF file that
+  backs the response's `elevation` scalar. `model_elevation` is a genuine
+  per-forecast-hour time series built from a **second**, independent HSURF
+  download (`DownloadIconCommand.downloadHsurfRaw`, shared by both call
+  sites) that is *not* sea-masked — open sea reads as the model's true
+  orography (~0 m), not -999. The two fields intentionally disagree over
+  water. HSURF itself doesn't vary by forecast hour, so the fetch happens
+  once per run and the same array is written into every timestep.
 - **`snowfall_height` is included even though it is rarely queried directly.**
   The ingest uses it to correct DWD weather codes and to split rain from snow
   (the `weather_code` / `rain` / `snowfall_water_equivalent` post-processing
@@ -60,8 +89,21 @@ Nuances baked into that list:
 - **The list is domain-independent.** `cloud_base`, `convective_inhibition`,
   `snowfall_height`, `visibility` and `lightning_potential` are not published
   for every domain; `getVarAndLevel` returns nil there and the download is
-  skipped silently, so nothing 404-loops. Downloadable counts: **25 on
-  icon-d2, 24 on icon-eu** (no `lpi`), **20 on icon global** (none of the five).
+  skipped silently, so nothing 404-loops. `surface_pressure_model` (`ps`) and
+  `model_elevation` (`hsurf`), by contrast, are published for all three
+  deterministic domains.
+- **`surface_pressure_model` and `model_elevation` are excluded from
+  `--group all` / `surface` / `surfaceAndPressure`** via
+  `VariableGroup.heidiVarsOnly` — reachable only through `--group heidiVars`.
+  `model_elevation` is a constant field, odd to write into a routine
+  `--group surface` run; `surface_pressure_model` stays opt-in until its
+  accuracy is measured (see above).
+- **Neither is fetched on the EPS domains** (`icon-eps`, `icon-eu-eps`,
+  `icon-d2-eps`). `pressure_msl` already downloads the identical `ps` GRIB
+  under its own name there (`getVarAndLevel`'s EPS branch), so a separate
+  `surface_pressure_model` fetch would duplicate that download under two
+  variable names; `model_elevation` was simply never extended to those
+  domains.
 - **`snowfall_convective_water_equivalent` is included even though it's
   never persisted to disk.** `DownloadIconCommand.swift` merges it into
   `snowfall_water_equivalent` at ingest time and explicitly skips writing it
@@ -71,6 +113,12 @@ Nuances baked into that list:
   `precipitation`, and `pressure_msl` are already in the marker-variable
   list (`GenericVariableHandle.swift:56`) that triggers `meta.json` writes
   automatically.
+- **`format=flatbuffers` cannot represent `surface_pressure_model` or
+  `model_elevation`.** The external `sdk` package's `openmeteo_sdk_Variable`
+  enum has no member for either (`surfacePressure` is already taken by the
+  derived variable), so both map to `.undefined` in
+  `FlatBuffers+WeatherApi.swift`. JSON and CSV are unaffected. Fixing this
+  needs an upstream SDK change, out of scope here.
 
 ### `cloud_base` semantics
 
@@ -96,15 +144,17 @@ than assumed:
 ## Storage, relative to `hiresTemp`
 
 Both groups share the same chunking/compression/retention machinery, so
-file count is the reliable comparison. `heidiVars` persists one file fewer
-than it downloads (`snowfall_convective_water_equivalent` is merged, not
-written):
+file count is the reliable comparison. Of the 27 raw variables,
+`snowfall_convective_water_equivalent` is merged rather than written on every
+domain (−1); `model_elevation`, despite bypassing the generic per-hour GRIB
+path, is written like any other field and persists everywhere (HSURF is
+published on all three deterministic domains):
 
 | Domain | grid points | `hiresTemp` files (8×full + half) | `heidiVars` files | ratio |
 |---|---|---|---|---|
-| icon-d2 | 906,390 | 586 | 24 | **4.1%** |
-| icon-eu | 904,689 | 667 | 23 | **3.4%** |
-| icon (global) | 4,148,639 | 1,081 | 19 | **1.8%** |
+| icon-d2 | 906,390 | 586 | 26 | **4.4%** |
+| icon-eu | 904,689 | 667 | 25 | **3.7%** |
+| icon (global) | 4,148,639 | 1,081 | 21 | **1.9%** |
 
 i.e. `heidiVars` adds roughly 2–4% of the disk footprint the
 model-level (`hiresTemp`) work already added, per domain.
@@ -155,6 +205,14 @@ Deployed via `build/deploy-release.sh` — confirmed the running
 HEAD commit (md5 `ff82bc4d`).
 
 The second batch (`HZEROCL`, `CEILING`, `CLCT`/`CLCL`/`CLCM`/`CLCH`,
-`U_10M`/`V_10M`, `CIN_ML`, plus `SNOWLMT`) brings the group to 25 variables
-and is **not deployed yet** — the release binary still has to be rebuilt and
-rolled out before the crontab entries above start picking these up.
+`U_10M`/`V_10M`, `CIN_ML`, plus `SNOWLMT`) brought the group to 25 variables.
+
+The third batch (`PS` → `surface_pressure_model`, `HSURF` → `model_elevation`)
+brings the group to 27 variables and is **not deployed yet** — the release
+binary still has to be rebuilt and rolled out before the crontab entries
+above start picking these up. Unlike the first two batches, this one is
+explicitly not meant to change what `--group surface` or `--group all`
+write (see `VariableGroup.heidiVarsOnly`), and `surface_pressure_model` is
+deliberately additive rather than a replacement for the existing derived
+`surface_pressure` — see the "Variables" section above before wiring either
+into anything that assumes `surface_pressure` is the only pressure field.

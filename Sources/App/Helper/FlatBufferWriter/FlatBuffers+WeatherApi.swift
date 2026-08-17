@@ -162,6 +162,11 @@ extension VariableAndPreviousDay: FlatBuffersVariable {
             return .init(variable: .snowfallHeight, previousDay: previousDay)
         case .surface_pressure:
             return .init(variable: .surfacePressure, previousDay: previousDay)
+        case .surface_pressure_model, .model_elevation:
+            // The SDK's openmeteo_sdk_Variable enum has no member for either -- `surfacePressure`
+            // is already taken by the elevation-following derived variable above. JSON/CSV are
+            // unaffected; `format=flatbuffers` cannot represent these two until the SDK gains members.
+            return .init(variable: .undefined, previousDay: previousDay)
         case .surface_temperature:
             return .init(variable: .surfaceTemperature, previousDay: previousDay)
         case .temperature_100m:

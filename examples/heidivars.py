@@ -21,6 +21,14 @@ from U_10M/V_10M) — and asserts the properties that are easy to regress silent
   * `snowfall_height` (wet bulb 1.3 °C) stays at or below `freezing_level_height`
     (dry bulb 0 °C).
 
+Also exercises the third batch — raw `surface_pressure_model` (DWD PS) and
+`model_elevation` (DWD HSURF, unmasked) — and measures the gap this change was
+built to quantify: how far the existing *derived* `surface_pressure` (a
+barometric reduction of `pressure_msl` through `temperature_2m` and the
+requested `elevation=`) drifts from the raw model value at a mountain grid
+cell. See HEIDIVARS.md, "surface_pressure_model sits alongside the existing
+derived surface_pressure, it does not replace it."
+
 Pinned to `models=icon_d2` — CEILING and CIN_ML are only published for icon-eu
 and icon-d2, so a seamless query could silently fall back to global ICON, where
 these variables do not exist.
@@ -54,6 +62,7 @@ VARIABLES = [
     "cape", "convective_inhibition",
     "wind_speed_10m", "wind_direction_10m",
     "temperature_2m",
+    "surface_pressure", "surface_pressure_model", "model_elevation", "pressure_msl",
 ]
 
 # DWD fills "no ceiling" with the top of the scan range. Measured on icon-d2 where
@@ -142,7 +151,8 @@ print()
 
 # --- units -------------------------------------------------------------------
 for v, want in [("cloud_base", "m"), ("freezing_level_height", "m"), ("snowfall_height", "m"),
-                ("cloud_cover", "%"), ("convective_inhibition", "J/kg"), ("wind_speed_10m", "m/s")]:
+                ("cloud_cover", "%"), ("convective_inhibition", "J/kg"), ("wind_speed_10m", "m/s"),
+                ("surface_pressure", "hPa"), ("surface_pressure_model", "hPa"), ("model_elevation", "m")]:
     got = units.get(v)
     check(f"unit {v}", got == want, f"{got!r} (want {want!r})")
 
@@ -216,6 +226,39 @@ spd = [x for x in h["wind_speed_10m"] if x is not None]
 dirs = [x for x in h["wind_direction_10m"] if x is not None]
 check("wind_speed_10m >= 0", all(x >= 0 for x in spd), f"max {max(spd):.1f} m/s")
 check("wind_direction_10m in 0..360", all(0 <= x <= 360 for x in dirs), f"{len(dirs)} hours")
+
+# --- model_elevation: raw HSURF, finite, matches the (masked) elevation on land ---
+# On land the mask never applies (elevation only drops to -999 over open sea), so
+# the unmasked time series and the static, sea-masked `elevation` field should agree.
+# Present-hours count, not ==n: only the ingested forecast window has to carry it,
+# same as every other heidiVars field checked above.
+me = [x for x in h["model_elevation"] if x is not None]
+check("model_elevation has data", len(me) > 0, f"{len(me)}/{n} hours present")
+if me:
+    spread = max(me) - min(me)
+    check("model_elevation is constant over the run (time-invariant field)", spread < 1.0,
+          f"range {min(me):.1f}..{max(me):.1f} m")
+    check("model_elevation matches response elevation on land", abs(me[0] - elevation) < 5.0,
+          f"model_elevation={me[0]:.1f} m vs elevation={elevation} m")
+
+# --- surface_pressure_model: sane magnitude, and the gap vs the derived value ------
+psfc = [x for x in h["surface_pressure_model"] if x is not None]
+check("surface_pressure_model is a sane hPa magnitude", all(300 <= x <= 1100 for x in psfc),
+      f"range {min(psfc):.1f}..{max(psfc):.1f} hPa" if psfc else "no data")
+
+derived = [x for x in h["surface_pressure"] if x is not None]
+raw = [x for x in h["surface_pressure_model"] if x is not None]
+if derived and raw and len(derived) == len(raw):
+    deltas = [d - r for d, r in zip(derived, raw)]
+    mean_delta = sum(deltas) / len(deltas)
+    max_abs_delta = max(abs(x) for x in deltas)
+    print(f"surface_pressure (derived) - surface_pressure_model (raw): "
+          f"mean {mean_delta:+.2f} hPa, max |delta| {max_abs_delta:.2f} hPa over {len(deltas)} hours "
+          f"at grid elevation {elevation} m")
+    notes.append(f"pressure delta: mean {mean_delta:+.2f} hPa, max |delta| {max_abs_delta:.2f} hPa "
+                 f"(informational -- see HEIDIVARS.md on which field should be authoritative)")
+else:
+    notes.append("skip pressure delta: surface_pressure/surface_pressure_model not both fully present")
 
 # --- report --------------------------------------------------------------------
 for line in notes:

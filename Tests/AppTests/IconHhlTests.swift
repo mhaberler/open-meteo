@@ -101,7 +101,7 @@ import OmFileFormat
     @Test func heidiVarsIsCuratedSurfaceSet() {
         let expected: Set<IconSurfaceVariable> = [
             .wind_gusts_10m, .wind_u_component_10m, .wind_v_component_10m,
-            .visibility, .pressure_msl, .weather_code,
+            .visibility, .pressure_msl, .surface_pressure_model, .model_elevation, .weather_code,
             .precipitation, .rain, .showers,
             .snowfall_water_equivalent, .snowfall_convective_water_equivalent, .snowfall_height,
             .temperature_2m, .relative_humidity_2m,
@@ -134,11 +134,41 @@ import OmFileFormat
         // global publishes neither ceiling, cin_ml, snowlmt, vis nor lpi
         let notInGlobal: [IconSurfaceVariable] = [.cloud_base, .convective_inhibition, .snowfall_height, .visibility, .lightning_potential]
         #expect(notInGlobal.allSatisfy { $0.getVarAndLevel(domain: .icon) == nil })
-        #expect(downloadable(.icon) == expected.count - notInGlobal.count) // 20
+        // model_elevation never rides the generic per-hour URL path (see `downloadHsurfRaw` /
+        // `DownloadIconCommand.downloadIcon`), so it is always excluded here regardless of domain.
+        #expect(IconSurfaceVariable.model_elevation.getVarAndLevel(domain: .icon) == nil)
+        #expect(IconSurfaceVariable.model_elevation.getVarAndLevel(domain: .iconEu) == nil)
+        #expect(IconSurfaceVariable.model_elevation.getVarAndLevel(domain: .iconD2) == nil)
+        #expect(downloadable(.icon) == expected.count - notInGlobal.count - 1) // 21
         // icon-eu has everything except lpi, which is icon-d2 only
         #expect(IconSurfaceVariable.lightning_potential.getVarAndLevel(domain: .iconEu) == nil)
-        #expect(downloadable(.iconEu) == expected.count - 1) // 24
-        #expect(downloadable(.iconD2) == expected.count)     // 25
+        #expect(downloadable(.iconEu) == expected.count - 1 - 1) // 25
+        #expect(downloadable(.iconD2) == expected.count - 1)     // 26
+
+        // Raw `ps` is published for all three deterministic domains (unlike the coarser-domain gaps above).
+        #expect(IconSurfaceVariable.surface_pressure_model.getVarAndLevel(domain: .icon)?.variable == "ps")
+        #expect(IconSurfaceVariable.surface_pressure_model.getVarAndLevel(domain: .iconEu)?.variable == "ps")
+        #expect(IconSurfaceVariable.surface_pressure_model.getVarAndLevel(domain: .iconD2)?.variable == "ps")
+        // On the EPS domains, `pressure_msl` already downloads this exact GRIB under its own name
+        // (see `getVarAndLevel`'s EPS branch) -- `surface_pressure_model` must stay nil there or the
+        // same file gets fetched twice under two variable names.
+        #expect(IconSurfaceVariable.surface_pressure_model.getVarAndLevel(domain: .iconEps) == nil)
+        #expect(IconSurfaceVariable.surface_pressure_model.getVarAndLevel(domain: .iconEuEps) == nil)
+        #expect(IconSurfaceVariable.surface_pressure_model.getVarAndLevel(domain: .iconD2Eps) == nil)
+    }
+
+    /// `surface_pressure_model` and `model_elevation` are heidiVars-only: `model_elevation` is a
+    /// constant field that would be odd in a routine `--group surface` run, and
+    /// `surface_pressure_model`'s accuracy against the derived `surface_pressure` hasn't been
+    /// measured yet (see HEIDIVARS.md). Regression guard for `VariableGroup.heidiVarsOnly`.
+    @Test func heidiVarsOnlyExcludedFromAllCasesGroups() {
+        for domain in [IconDomains.iconD2, .iconEu, .icon] {
+            for group: DownloadIconCommand.VariableGroup in [.all, .surface, .surfaceAndPressure] {
+                let surface = group.variables(domain: domain).compactMap { $0 as? IconSurfaceVariable }
+                #expect(!surface.contains(.model_elevation))
+                #expect(!surface.contains(.surface_pressure_model))
+            }
+        }
     }
 
     /// HHL column cache is a reference type: a stored column is shared across value copies of the reader,
