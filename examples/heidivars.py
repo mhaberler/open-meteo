@@ -48,7 +48,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-BASE = os.environ.get("OM_API", "https://open-meteo-temp.mah.priv.at").rstrip("/")
+#BASE = os.environ.get("OM_API", "https://open-meteo-temp.mah.priv.at").rstrip("/")
+BASE = os.environ.get("OM_API", "https://open-meteo.mah.priv.at").rstrip("/")
 # Default to the Zugspitze massif: a ~2000 m grid cell makes the MSL check
 # discriminating (over lowland the ceiling clears the terrain trivially) and puts
 # cloud_base, CAPE and CIN into interesting ranges.
