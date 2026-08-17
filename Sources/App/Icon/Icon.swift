@@ -248,6 +248,15 @@ enum IconDomains: String, CaseIterable, GenericDomain {
         .staticFile(domain: domainRegistryStatic ?? domainRegistry, variable: "hhl", chunk: nil)
     }
 
+    /// Raw (unmasked) HSURF, cached once per domain for the heidiVars `model_elevation`
+    /// time series. Distinct from `surfaceElevationFileOm`, which masks sea points to -999.
+    /// DWD only republishes the time-invariant HSURF file under some run hours, so this is
+    /// downloaded once (on whichever run first succeeds) and read from disk afterwards,
+    /// same idiom as `surfaceElevationFileOm`/`hhlFileOm`.
+    var modelElevationRawFileOm: OmFileType {
+        .staticFile(domain: domainRegistryStatic ?? domainRegistry, variable: "HSURF_raw", chunk: nil)
+    }
+
     /// ICON uses 1.5°C melting point temperature: https://gitlab.dkrz.de/icon/icon-model/-/blob/release-2024.01-public/src/atm_phy_nwp/mo_nh_interface_nwp.f90?ref_type=heads#L2232
     static let tMelt = Float(1.5)
 }

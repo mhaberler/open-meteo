@@ -378,14 +378,24 @@ struct DownloadIconCommand: AsyncCommand {
             return elevation
         }()
 
-        /// Raw (unmasked) model orography for the `model_elevation` heidiVars time series. Fetched once
-        /// per run (HSURF is `time-invariant`, not per-forecast-hour) and written into every timestep
-        /// below. `nil` unless `model_elevation` is actually requested.
+        /// Raw (unmasked) model orography for the `model_elevation` heidiVars time series. HSURF is
+        /// `time-invariant` and DWD only republishes it under some run hours, so this is cached to disk
+        /// once (on whichever run first succeeds) and read back on every later run -- same idiom as
+        /// `convertSurfaceElevation`/`convertHhlHeights` -- instead of re-downloading (and 404-retrying)
+        /// on every invocation. Written into every timestep below. `nil` unless `model_elevation` is
+        /// actually requested.
         let hsurfRaw: [Float]? = try await {
             guard variables.contains(where: { ($0 as? IconSurfaceVariable) == .model_elevation }) else {
                 return nil
             }
-            return try await downloadHsurfRaw(domain: domain, run: run, curl: curl, cdo: cdo)
+            let cacheFile = domain.modelElevationRawFileOm.getFilePath()
+            if FileManager.default.fileExists(atPath: cacheFile) {
+                return try await OmFileReader(file: cacheFile).asArray(of: Float.self)?.read()
+            }
+            let hsurf = try await downloadHsurfRaw(domain: domain, run: run, curl: curl, cdo: cdo)
+            try domain.modelElevationRawFileOm.createDirectory()
+            try hsurf.writeOmFile2D(file: cacheFile, grid: domain.grid, createNetCdf: false)
+            return hsurf
         }()
 
         var forecastSteps = domain.getDownloadForecastSteps(run: run.hour)
