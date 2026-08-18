@@ -661,6 +661,8 @@ struct CoordinatesAndElevation {
         self.longitude = longitude
         if let elevation {
             self.elevation = elevation
+        } else if !OpenMeteo.demDownscaling {
+            self.elevation = .nan
         } else {
             self.elevation = try await Dem90.read(lat: latitude, lon: longitude, logger: logger, httpClient: httpClient)
         }

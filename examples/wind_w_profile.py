@@ -42,6 +42,8 @@ url = f"{BASE}/v1/dwd-icon?" + urllib.parse.urlencode({
     "models": "icon_global",
     # explicit m/s: older servers apply the default kmh wind unit to wind_w as well
     "windspeed_unit": "ms",
+    # Pin to model-grid elevation; no DEM downscaling regardless of instance.
+    "elevation": "nan",
 })
 
 def fail_with_body(prefix, status, content_type, body):

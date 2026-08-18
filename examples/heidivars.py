@@ -82,6 +82,8 @@ url = f"{BASE}/v1/dwd-icon?" + urllib.parse.urlencode({
     "forecast_hours": 24,
     "models": "icon_d2",
     "windspeed_unit": "ms",
+    # Pin to model-grid elevation; no DEM downscaling regardless of instance.
+    "elevation": "nan",
 })
 
 

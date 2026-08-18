@@ -94,6 +94,15 @@ enum OpenMeteo {
         return Environment.get("REMOTE_DATA_DIRECTORY_MINIMUM_AGE").map(Int.init) ?? nil
     }()
 
+    /// Resolve coordinates against the DEM90 to downscale to real terrain height
+    /// (terrain-optimised cell selection + lapse correction + surface-pressure reduction).
+    /// Set DEM_DOWNSCALING=false to always use the model-grid elevation (HSURF) instead,
+    /// independent of whether DEM90 static files are present. An explicit numeric
+    /// `elevation=` query parameter is still honored.
+    static let demDownscaling = {
+        Environment.get("DEM_DOWNSCALING") != "false"
+    }()
+
     /// Cache all data access using spare files in this directory
     /*static var cacheDirectory = {
         return Environment.get("CACHE_DIRECTORY")

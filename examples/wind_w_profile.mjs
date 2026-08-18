@@ -24,6 +24,8 @@ const url = `${BASE}/v1/dwd-icon?` + new URLSearchParams({
     longitude: lon,
     hourly: hourly.join(","),
     forecast_days: 1,
+    // Pin to model-grid elevation; no DEM downscaling regardless of instance.
+    elevation: "nan",
 });
 
 console.log(`GET ${url}\n`);
