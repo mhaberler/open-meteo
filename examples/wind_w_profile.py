@@ -23,7 +23,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-BASE = os.environ.get("OM_API", "https://open-meteo-temp.mah.priv.at").rstrip("/")
+BASE = os.environ.get("OM_API", "https://open-meteo.wetterheidi.de").rstrip("/")
 LAT = float(sys.argv[1]) if len(sys.argv) > 1 else 47.8
 LON = float(sys.argv[2]) if len(sys.argv) > 2 else 16.2
 
