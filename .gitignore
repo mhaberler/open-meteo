@@ -15,3 +15,6 @@ data_spatial
 .venv
 .vscode/
 untracked
+.cc-history
+.claude/settings.json
+Package.resolved
