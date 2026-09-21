@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>vpsmon</title>
+<link rel="stylesheet" href="/ui/vendor/vis-timeline-graph2d.min.css">
+<style>
+:root {
+  color-scheme: light;
+  --bg: #f7f7f7;
+  --text: #101828;
+  --muted: #526176;
+  --border: #cccccc;
+  --panel: #f7f7f7;
+  --accent-start: #5aada8;
+  --accent-end: #6d8fc2;
+  --alert: #b34d4d;
+  --link: #5d80b5;
+}
+[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #1a1a1a;
+  --text: #e7f3ff;
+  --muted: #94a9bd;
+  --border: #333333;
+  --panel: #1a1a1a;
+  --accent-start: #28736f;
+  --accent-end: #466797;
+  --alert: #d46d6d;
+  --link: #7599d1;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); overflow: hidden; }
+body {
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace;
+  display: flex;
+  flex-direction: column;
+}
+.tabs {
+  display: flex;
+  gap: 0.25rem;
+  align-items: center;
+  padding: 0.4rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  flex: none;
+}
+.tabs button {
+  font: inherit;
+  font-size: 0.85rem;
+  color: var(--muted);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  padding: 0.25rem 0.7rem;
+  cursor: pointer;
+}
+.tabs button[aria-selected="true"] {
+  color: var(--text);
+  border-color: var(--border);
+}
+.utc {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+.panel { flex: 1; min-height: 0; min-width: 0; }
+.panel[hidden] { display: none; }
+#panel-ingest { display: flex; flex-direction: column; overflow: hidden; }
+#panel-ingest[hidden] { display: none; }
+iframe { width: 100%; height: 100%; border: 0; background: var(--bg); }
+#chart { flex: 1; min-height: 0; min-width: 0; width: 100%; overflow: hidden; }
+.vis-item.phase-bar { min-width: 5px; border: none; color: transparent; }
+.vis-item.ingest { background-color: var(--accent-start); }
+.vis-item.process { background-color: var(--accent-end); }
+.vis-item.failed { background-color: var(--alert); }
+.vis-item.open { outline: 1px dashed var(--text); outline-offset: -1px; }
+.legend { display: flex; gap: 1rem; padding: 0.35rem 0.75rem 0; font-size: 0.75rem; color: var(--muted); }
+.swatch { display: inline-block; width: 0.8rem; height: 0.8rem; vertical-align: -0.1rem; margin-right: 0.3rem; }
+.error { padding: 1rem; color: var(--alert); }
+</style>
+</head>
+<body>
+<nav class="tabs">
+  <button type="button" id="tab-host" role="tab" aria-selected="true">Host</button>
+  <button type="button" id="tab-ingest" role="tab" aria-selected="false">Ingest</button>
+  <span class="utc">UTC</span>
+  <button type="button" class="theme-switch" id="theme-btn">Dark Mode</button>
+</nav>
+<section class="panel" id="panel-host">
+  <iframe src="/" title="vpsmon"></iframe>
+</section>
+<section class="panel" id="panel-ingest" hidden>
+  <div class="legend">
+    <span><i class="swatch" style="background:var(--accent-start)"></i>ingest</span>
+    <span><i class="swatch" style="background:var(--accent-end)"></i>process</span>
+    <span><i class="swatch" style="background:var(--alert)"></i>failed</span>
+  </div>
+  <div id="chart"></div>
+</section>
+<script>
+const savedTheme = localStorage.getItem("theme") || (window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
+document.documentElement.setAttribute("data-theme", savedTheme);
+</script>
+<script src="/ui/vendor/vis-timeline-graph2d.min.js"></script>
+<script>
+const hostTab = document.getElementById("tab-host");
+const ingestTab = document.getElementById("tab-ingest");
+const hostPanel = document.getElementById("panel-host");
+const ingestPanel = document.getElementById("panel-ingest");
+const chartEl = document.getElementById("chart");
+const themeBtn = document.getElementById("theme-btn");
+const frame = document.querySelector("iframe");
+let timeline = null;
+let phaseData = null;
+
+function applyTheme(theme, syncFrame) {
+  document.documentElement.setAttribute("data-theme", theme);
+  localStorage.setItem("theme", theme);
+  themeBtn.textContent = theme === "light" ? "Dark Mode" : "Light Mode";
+  if (!syncFrame) return;
+  try {
+    if (typeof frame.contentWindow.setTheme === "function") frame.contentWindow.setTheme(theme);
+    else frame.contentDocument.documentElement.setAttribute("data-theme", theme);
+  } catch (e) {}
+}
+applyTheme(savedTheme, false);
+themeBtn.addEventListener("click", () => {
+  const next = document.documentElement.getAttribute("data-theme") === "light" ? "dark" : "light";
+  applyTheme(next, true);
+});
+window.addEventListener("storage", (event) => {
+  if (event.key === "theme" && event.newValue) applyTheme(event.newValue, false);
+});
+frame.addEventListener("load", () => {
+  try {
+    const theme = frame.contentDocument.documentElement.getAttribute("data-theme");
+    if (theme) applyTheme(theme, false);
+  } catch (e) {}
+});
+
+function pad(n) { return String(n).padStart(2, "0"); }
+function utcLabel(date, withDay) {
+  const d = new Date(date);
+  const hm = pad(d.getUTCHours()) + ":" + pad(d.getUTCMinutes());
+  if (!withDay) return hm;
+  const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  return d.getUTCDate() + " " + months[d.getUTCMonth()] + " " + hm;
+}
+
+function show(which) {
+  const ingest = which === "ingest";
+  hostTab.setAttribute("aria-selected", String(!ingest));
+  ingestTab.setAttribute("aria-selected", String(ingest));
+  hostPanel.hidden = ingest;
+  ingestPanel.hidden = !ingest;
+  if (!ingest) return;
+  if (!timeline && phaseData) draw(phaseData);
+  else if (timeline) requestAnimationFrame(() => timeline.redraw());
+}
+
+hostTab.addEventListener("click", () => show("host"));
+ingestTab.addEventListener("click", () => show("ingest"));
+
+function draw(data) {
+  const now = Date.now();
+  const items = data.items.map((item) => ({
+    ...item,
+    start: new Date(item.start),
+    end: item.end ? new Date(item.end) : new Date(now),
+  }));
+  const options = {
+    stack: false,
+    orientation: "top",
+    zoomMin: 60 * 1000,
+    zoomMax: 7 * 24 * 3600 * 1000,
+    height: chartEl.clientHeight,
+    start: new Date(now - 6 * 3600 * 1000),
+    end: new Date(now + 60 * 60 * 1000),
+    min: new Date(now - 7 * 24 * 3600 * 1000),
+    max: new Date(now + 60 * 60 * 1000),
+    tooltip: { followMouse: true, overflowMethod: "cap" },
+    format: {
+      minorLabels: (date, scale) => utcLabel(date, scale === "day" || scale === "weekday"),
+      majorLabels: (date, scale) => {
+        const d = new Date(date);
+        const months = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+        if (scale === "day" || scale === "weekday" || scale === "month") return months[d.getUTCMonth()] + " " + d.getUTCFullYear();
+        return d.getUTCDate() + " " + months[d.getUTCMonth()] + " " + d.getUTCFullYear() + " UTC";
+      },
+    },
+  };
+  timeline = new vis.Timeline(chartEl, new vis.DataSet(items), new vis.DataSet(data.groups), options);
+  requestAnimationFrame(() => timeline.redraw());
+}
+
+window.addEventListener("resize", () => {
+  if (!timeline) return;
+  timeline.setOptions({ height: chartEl.clientHeight });
+});
+
+fetch("/phases.json")
+  .then((response) => {
+    if (!response.ok) throw new Error("phases " + response.status);
+    return response.json();
+  })
+  .then((data) => {
+    phaseData = data;
+    if (!ingestPanel.hidden) draw(data);
+  })
+  .catch((error) => {
+    chartEl.className = "error";
+    chartEl.textContent = String(error);
+  });
+</script>
+<style>
+.vis-timeline { border: none !important; background: var(--panel) !important; }
+.vis-panel, .vis-labelset, .vis-time-axis { background: var(--panel) !important; }
+.vis-label, .vis-text { color: var(--text) !important; }
+.vis-grid.vis-minor { border-color: var(--border) !important; }
+.vis-grid.vis-major { border-color: var(--border) !important; }
+.vis-current-time { background-color: var(--muted) !important; width: 1px !important; }
+</style>
+</body>
+</html>

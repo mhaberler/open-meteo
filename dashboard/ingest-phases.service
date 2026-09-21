@@ -1,0 +1,15 @@
+[Unit]
+Description=ICON ingest phase chart
+After=network.target
+
+[Service]
+Type=simple
+User=mah
+Group=mah
+WorkingDirectory=/home/mah/src/open-meteo/dashboard
+ExecStart=/usr/bin/python3 /home/mah/src/open-meteo/dashboard/watch.py
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
