@@ -17,7 +17,7 @@ from pathlib import Path
 
 LOG_DIR = Path(os.environ.get("INGEST_LOG_DIR", "/open-meteo/log"))
 DB_PATH = Path(os.environ.get("INGEST_DB", Path(__file__).resolve().parent / "data" / "phases.sqlite"))
-RETENTION_DAYS = 7
+RETENTION_DAYS = 14
 
 # Filename stem -> (model, group). Order is the chart row order.
 JOBS: list[tuple[str, str, str]] = [
