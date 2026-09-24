@@ -70,11 +70,15 @@ body {
 #panel-ingest[hidden] { display: none; }
 iframe { width: 100%; height: 100%; border: 0; background: var(--bg); }
 #chart { flex: 1; min-height: 0; min-width: 0; width: 100%; overflow: hidden; }
+svg.disk-lines { position: absolute; left: 0; top: 0; pointer-events: none; overflow: visible; }
 .vis-item.phase-bar { min-width: 5px; border: none; color: transparent; }
 .vis-item.ingest { background-color: var(--accent-start); }
 .vis-item.process { background-color: var(--accent-end); }
 .vis-item.failed { background-color: var(--alert); }
 .vis-item.open { outline: 1px dashed var(--text); outline-offset: -1px; }
+.vis-item.disk-pad { height: 72px; background: transparent; border: none; box-shadow: none; color: transparent; }
+svg.disk-lines circle { pointer-events: auto; }
+#disk-tip { position: fixed; z-index: 20; visibility: hidden; pointer-events: none; }
 .legend { display: flex; gap: 1rem; padding: 0.35rem 0.75rem 0; font-size: 0.75rem; color: var(--muted); }
 .swatch { display: inline-block; width: 0.8rem; height: 0.8rem; vertical-align: -0.1rem; margin-right: 0.3rem; }
 .error { padding: 1rem; color: var(--alert); }
@@ -95,6 +99,7 @@ iframe { width: 100%; height: 100%; border: 0; background: var(--bg); }
     <span><i class="swatch" style="background:var(--accent-start)"></i>ingest</span>
     <span><i class="swatch" style="background:var(--accent-end)"></i>process</span>
     <span><i class="swatch" style="background:var(--alert)"></i>failed</span>
+    <span><i class="swatch" style="background:var(--text)"></i>disk used, GB</span>
   </div>
   <div id="chart"></div>
 </section>
@@ -156,7 +161,10 @@ function show(which) {
   ingestPanel.hidden = !ingest;
   if (!ingest) return;
   if (!timeline && phaseData) draw(phaseData);
-  else if (timeline) requestAnimationFrame(() => timeline.redraw());
+  else if (timeline) requestAnimationFrame(() => {
+    timeline.setOptions({ height: chartEl.clientHeight });
+    drawDisk();
+  });
 }
 
 hostTab.addEventListener("click", () => show("host"));
@@ -190,8 +198,120 @@ function draw(data) {
       },
     },
   };
-  timeline = new vis.Timeline(chartEl, new vis.DataSet(items), new vis.DataSet(data.groups), options);
+  const groups = data.groups.slice();
+  const latest = (data.disk || [])[data.disk.length - 1];
+  groups.push({
+    id: "disk",
+    content: latest ? "disk " + latest.gb.toFixed(1) + " GB" : "disk GB",
+    order: groups.length,
+    className: "disk-row",
+  });
+  items.push({
+    id: "disk-pad",
+    group: "disk",
+    start: new Date(now),
+    type: "box",
+    content: "",
+    className: "disk-pad",
+  });
+  timeline = new vis.Timeline(chartEl, new vis.DataSet(items), new vis.DataSet(groups), options);
+  timeline.on("changed", () => drawDisk());
   requestAnimationFrame(() => timeline.redraw());
+}
+
+function drawDisk() {
+  const itemset = chartEl.querySelector(".vis-itemset");
+  const labels = chartEl.querySelectorAll(".vis-labelset .vis-label");
+  if (!itemset || !timeline || !phaseData || labels.length === 0) return;
+  let svg = itemset.querySelector("svg.disk-lines");
+  if (!svg) {
+    svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("class", "disk-lines");
+    itemset.appendChild(svg);
+  }
+  const width = itemset.clientWidth;
+  const height = itemset.clientHeight;
+  svg.setAttribute("width", String(width));
+  svg.setAttribute("height", String(height));
+  const label = chartEl.querySelector(".vis-label.disk-row");
+  const samples = (phaseData.disk || []).slice().sort((a, b) => a.at.localeCompare(b.at));
+  if (!label || samples.length === 0 || width === 0) {
+    svg.replaceChildren();
+    return;
+  }
+  let min = Math.min(...samples.map((sample) => sample.gb));
+  let max = Math.max(...samples.map((sample) => sample.gb));
+  if (max - min < 0.05) {
+    min -= 0.5;
+    max += 0.5;
+  } else {
+    const pad = (max - min) * 0.15;
+    min -= pad;
+    max += pad;
+  }
+  const range = timeline.getWindow();
+  const t0 = range.start.getTime();
+  const t1 = range.end.getTime();
+  const top = label.offsetTop;
+  const row = label.offsetHeight;
+  const color = getComputedStyle(document.documentElement).getPropertyValue("--text").trim() || "#e7f3ff";
+  const coords = samples.map((sample) => ({
+    x: (new Date(sample.at).getTime() - t0) / (t1 - t0) * width,
+    y: top + row - 4 - ((sample.gb - min) / (max - min)) * (row - 8),
+    sample,
+  }));
+  svg.replaceChildren();
+  hideDiskTip();
+  if (coords.length >= 2) {
+    const line = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
+    line.setAttribute("fill", "none");
+    line.setAttribute("stroke", color);
+    line.setAttribute("stroke-width", "1.5");
+    line.setAttribute("points", coords.map((point) => point.x.toFixed(1) + "," + point.y.toFixed(1)).join(" "));
+    svg.appendChild(line);
+  }
+  for (const point of coords) {
+    const dot = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    dot.setAttribute("cx", point.x.toFixed(1));
+    dot.setAttribute("cy", point.y.toFixed(1));
+    dot.setAttribute("r", "3");
+    dot.setAttribute("fill", color);
+    svg.appendChild(dot);
+    const hit = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    hit.setAttribute("cx", point.x.toFixed(1));
+    hit.setAttribute("cy", point.y.toFixed(1));
+    hit.setAttribute("r", "8");
+    hit.setAttribute("fill", "transparent");
+    hit.addEventListener("mouseenter", (event) => showDiskTip(event, point.sample));
+    hit.addEventListener("mousemove", (event) => showDiskTip(event, point.sample));
+    hit.addEventListener("mouseleave", hideDiskTip);
+    svg.appendChild(hit);
+  }
+}
+
+function diskTip() {
+  let tip = document.getElementById("disk-tip");
+  if (tip) return tip;
+  tip = document.createElement("div");
+  tip.id = "disk-tip";
+  tip.className = "vis-tooltip";
+  document.body.appendChild(tip);
+  return tip;
+}
+
+function showDiskTip(event, sample) {
+  const tip = diskTip();
+  const job = sample.job ? sample.job.replace("/", " ") : "disk";
+  const run = sample.run ? "<br>run " + sample.run + "Z" : "";
+  tip.innerHTML = sample.gb.toFixed(1) + " GB used<br>" + sample.kind + "<br>" + job + run + "<br>" + sample.at;
+  tip.style.visibility = "visible";
+  tip.style.left = (event.clientX + 12) + "px";
+  tip.style.top = (event.clientY + 12) + "px";
+}
+
+function hideDiskTip() {
+  const tip = document.getElementById("disk-tip");
+  if (tip) tip.style.visibility = "hidden";
 }
 
 window.addEventListener("resize", () => {
@@ -220,6 +340,7 @@ fetch("/phases.json")
 .vis-grid.vis-minor { border-color: var(--border) !important; }
 .vis-grid.vis-major { border-color: var(--border) !important; }
 .vis-current-time { background-color: var(--muted) !important; width: 1px !important; }
+.vis-itemset { position: relative; }
 </style>
 </body>
 </html>

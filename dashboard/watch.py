@@ -82,6 +82,7 @@ def follow(store: Store, filename: str, model: str, group: str) -> None:
 
 def main() -> None:
     STORE.backfill()
+    STORE.record_disk(datetime.now(timezone.utc), None, None, "sample")
     server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
     import threading
 

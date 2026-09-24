@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 import sqlite3
 import threading
 from dataclasses import dataclass, field
@@ -17,7 +18,9 @@ from pathlib import Path
 
 LOG_DIR = Path(os.environ.get("INGEST_LOG_DIR", "/open-meteo/log"))
 DB_PATH = Path(os.environ.get("INGEST_DB", Path(__file__).resolve().parent / "data" / "phases.sqlite"))
+DISK_PATH = Path(os.environ.get("INGEST_DISK_PATH", "/open-meteo"))
 RETENTION_DAYS = 14
+GIB = 1024 ** 3
 
 # Filename stem -> (model, group). Order is the chart row order.
 JOBS: list[tuple[str, str, str]] = [
@@ -294,7 +297,33 @@ class Store:
             )
             """
         )
+        self._db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS disk_samples (
+                id INTEGER PRIMARY KEY,
+                at TEXT NOT NULL,
+                job TEXT,
+                run TEXT,
+                kind TEXT NOT NULL,
+                used_bytes INTEGER NOT NULL,
+                total_bytes INTEGER NOT NULL
+            )
+            """
+        )
         self._db.commit()
+
+    def record_disk(self, at: datetime, job: str | None, run: str | None, kind: str) -> None:
+        path = DISK_PATH if DISK_PATH.exists() else Path("/")
+        usage = shutil.disk_usage(path)
+        with self._lock:
+            self._db.execute(
+                """
+                INSERT INTO disk_samples (at, job, run, kind, used_bytes, total_bytes)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (iso(at), job, run, kind, usage.used, usage.total),
+            )
+            self._db.commit()
 
     def upsert(self, row: Phase) -> None:
         with self._lock:
@@ -369,6 +398,7 @@ class Store:
                 "DELETE FROM phases WHERE end IS NOT NULL AND end < ?",
                 (cutoff,),
             )
+            self._db.execute("DELETE FROM disk_samples WHERE at < ?", (cutoff,))
             self._db.commit()
             return cur.rowcount
 
@@ -425,7 +455,32 @@ class Store:
                     "type": "range",
                 }
             )
-        return {"generated": iso(now), "groups": groups, "items": items}
+        with self._lock:
+            samples = self._db.execute(
+                """
+                SELECT at, job, run, kind, used_bytes, total_bytes
+                FROM disk_samples
+                WHERE at >= ?
+                ORDER BY at
+                """,
+                (cutoff,),
+            ).fetchall()
+        disk = []
+        for sample in samples:
+            used_gb = sample["used_bytes"] / GIB
+            model, group = labels.get(sample["job"], ("", ""))
+            where = job_label(model, group) if sample["job"] else "disk"
+            disk.append(
+                {
+                    "at": sample["at"],
+                    "gb": round(used_gb, 2),
+                    "kind": sample["kind"],
+                    "job": sample["job"],
+                    "run": sample["run"],
+                    "title": f"{where}<br>{sample['kind']}<br>{used_gb:.1f} GB used",
+                }
+            )
+        return {"generated": iso(now), "groups": groups, "items": items, "disk": disk}
 
 
 class Follower:
@@ -444,10 +499,12 @@ class Follower:
         started = RE_START.search(text)
         if started:
             if self.run is not None and not self.saw_finished:
+                self.store.record_disk(now, self.job, self.run, "after")
                 self.store.close_open(self.job, self.run, now, ok=False)
             self.run = started.group(2)
             self.saw_download = False
             self.saw_finished = False
+            self.store.record_disk(now, self.job, self.run, "before")
             self.store.upsert(Phase(self.job, self.run, "ingest", now, None, True))
             return
         if self.run is None:
@@ -462,11 +519,8 @@ class Follower:
             return
         if RE_FINISHED.search(text):
             self.saw_finished = True
-            if not self.saw_download:
-                self.store.close_open(self.job, self.run, now, ok=True)
-            else:
-                # Keep the end set by the last Convert completed.
-                self.store.close_open(self.job, self.run, now, ok=True)
+            self.store.close_open(self.job, self.run, now, ok=True)
+            self.store.record_disk(now, self.job, self.run, "after")
 
     def _ingest_start(self, fallback: datetime) -> datetime:
         with self.store._lock:
