@@ -10,7 +10,7 @@ fields — a lighter-weight alternative to `--group surface` (which pulls all
 
 ## Variables
 
-The group downloads 27 raw variables:
+The group downloads 31 raw variables:
 
 ```swift
 case .heidiVars:
@@ -22,6 +22,8 @@ case .heidiVars:
         .snowfall_water_equivalent, .snowfall_convective_water_equivalent,
         .snowfall_height,
         .temperature_2m, .relative_humidity_2m,
+        .soil_temperature_0cm, .soil_temperature_6cm,
+        .soil_temperature_18cm, .soil_temperature_54cm,
         .cloud_cover, .cloud_cover_low, .cloud_cover_mid, .cloud_cover_high,
         .cloud_base, .freezing_level_height,
         .cape, .convective_inhibition, .lightning_potential,
@@ -29,6 +31,12 @@ case .heidiVars:
     ]
     return vars
 ```
+
+Soil temperature was already an `IconSurfaceVariable` (DWD `T_SO`, stored in °C). Adding it to this list is what makes the heidiVars cron download it. `surface_temperature` is an alias of the 0 cm field, so it becomes queryable with no extra file. icon-d2's 15-minute files do not carry `T_SO`; `getVarAndLevel` returns nil there.
+
+| DWD GRIB | open-meteo name | domains |
+|---|---|---|
+| `T_SO` level 0 / 6 / 18 / 54 | `soil_temperature_0cm` / `_6cm` / `_18cm` / `_54cm` | icon, icon-eu, icon-d2 |
 
 Only `cloud_base` (DWD `CEILING`) had to be added to `IconSurfaceVariable` for
 the first batch; everything else already existed as a downloadable case with
@@ -144,7 +152,7 @@ than assumed:
 ## Storage, relative to `hiresTemp`
 
 Both groups share the same chunking/compression/retention machinery, so
-file count is the reliable comparison. Of the 27 raw variables,
+file count is the reliable comparison. Of the 31 raw variables,
 `snowfall_convective_water_equivalent` is merged rather than written on every
 domain (−1); `model_elevation`, despite bypassing the generic per-hour GRIB
 path, is written like any other field and persists everywhere (HSURF is
@@ -152,11 +160,11 @@ published on all three deterministic domains):
 
 | Domain | grid points | `hiresTemp` files (8×full + half) | `heidiVars` files | ratio |
 |---|---|---|---|---|
-| icon-d2 | 906,390 | 586 | 26 | **4.4%** |
-| icon-eu | 904,689 | 667 | 25 | **3.7%** |
-| icon (global) | 4,148,639 | 1,081 | 21 | **1.9%** |
+| icon-d2 | 906,390 | 586 | 30 | **5.1%** |
+| icon-eu | 904,689 | 667 | 29 | **4.3%** |
+| icon (global) | 4,148,639 | 1,081 | 25 | **2.3%** |
 
-i.e. `heidiVars` adds roughly 2–4% of the disk footprint the
+i.e. `heidiVars` adds roughly 2–5% of the disk footprint the
 model-level (`hiresTemp`) work already added, per domain.
 
 ## Proposed crontab entries

@@ -94,7 +94,7 @@ import OmFileFormat
         }
     }
 
-    /// `heidiVars` is the curated 2D surface set: pure single-level surface variables, no model-level
+    /// `heidiVars` is the curated 2D surface set: single-level and soil-level variables, no model-level
     /// or pressure-level leakage, and a single domain-independent list. Variables DWD does not publish
     /// for a given domain are not filtered out of the list — they are skipped at download time by
     /// `getVarAndLevel` returning nil, which is what keeps Curl from retry-looping on 404s.
@@ -105,6 +105,7 @@ import OmFileFormat
             .precipitation, .rain, .showers,
             .snowfall_water_equivalent, .snowfall_convective_water_equivalent, .snowfall_height,
             .temperature_2m, .relative_humidity_2m,
+            .soil_temperature_0cm, .soil_temperature_6cm, .soil_temperature_18cm, .soil_temperature_54cm,
             .cloud_cover, .cloud_cover_low, .cloud_cover_mid, .cloud_cover_high,
             .cloud_base, .freezing_level_height,
             .cape, .convective_inhibition, .lightning_potential,
@@ -116,8 +117,11 @@ import OmFileFormat
             #expect(surface.count == vars.count)
             #expect(Set(surface) == expected)
             #expect(surface.count == expected.count) // no duplicates
-            // never a model-level or pressure-level request
-            #expect(surface.allSatisfy { ($0.getVarAndLevel(domain: domain)?.cat ?? "single-level") == "single-level" })
+            // never a model-level or pressure-level request; soil temperature is soil-level
+            #expect(surface.allSatisfy {
+                let cat = $0.getVarAndLevel(domain: domain)?.cat ?? "single-level"
+                return cat == "single-level" || cat == "soil-level"
+            })
         }
 
         // CEILING is only published for icon-eu and icon-d2, mapped to the open-meteo `cloud_base` name
@@ -139,11 +143,11 @@ import OmFileFormat
         #expect(IconSurfaceVariable.model_elevation.getVarAndLevel(domain: .icon) == nil)
         #expect(IconSurfaceVariable.model_elevation.getVarAndLevel(domain: .iconEu) == nil)
         #expect(IconSurfaceVariable.model_elevation.getVarAndLevel(domain: .iconD2) == nil)
-        #expect(downloadable(.icon) == expected.count - notInGlobal.count - 1) // 21
+        #expect(downloadable(.icon) == expected.count - notInGlobal.count - 1) // 25
         // icon-eu has everything except lpi, which is icon-d2 only
         #expect(IconSurfaceVariable.lightning_potential.getVarAndLevel(domain: .iconEu) == nil)
-        #expect(downloadable(.iconEu) == expected.count - 1 - 1) // 25
-        #expect(downloadable(.iconD2) == expected.count - 1)     // 26
+        #expect(downloadable(.iconEu) == expected.count - 1 - 1) // 29
+        #expect(downloadable(.iconD2) == expected.count - 1)     // 30
 
         // Raw `ps` is published for all three deterministic domains (unlike the coarser-domain gaps above).
         #expect(IconSurfaceVariable.surface_pressure_model.getVarAndLevel(domain: .icon)?.variable == "ps")
