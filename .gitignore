@@ -18,3 +18,4 @@ untracked
 .cc-history
 .claude/settings.json
 Package.resolved
+build/Caddyfile
