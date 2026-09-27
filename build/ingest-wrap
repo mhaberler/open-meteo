@@ -1,0 +1,23 @@
+#!/bin/bash
+# ingest-wrap LOGNAME COMMAND...
+# Truncates $DATA_DIRECTORY/log/LOGNAME, runs COMMAND into it, and on a
+# non-zero exit keeps a copy and prints the tail so cron can mail it.
+set -u
+logdir="${DATA_DIRECTORY:-/open-meteo/}"
+logdir="${logdir%/}/log"
+name="$1"
+shift
+log="$logdir/$name"
+mkdir -p "$logdir/failed"
+: > "$log"
+"$@" >> "$log" 2>&1
+status=$?
+if [ "$status" -ne 0 ]; then
+    stamp=$(date -u +%Y%m%dT%H%M%SZ)
+    cp "$log" "$logdir/failed/${name%.log}.$stamp.log"
+    echo "exit $status; full log: $logdir/failed/${name%.log}.$stamp.log"
+    tail -n 200 "$log"
+fi
+find "$logdir/failed" -name '*.log' -mtime +14 -delete
+exit "$status"
+
