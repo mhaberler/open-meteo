@@ -77,6 +77,10 @@ svg.disk-lines { position: absolute; left: 0; top: 0; pointer-events: none; over
 .vis-item.failed { background-color: var(--alert); }
 .vis-item.open { outline: 1px dashed var(--text); outline-offset: -1px; }
 .vis-item.disk-pad { height: 72px; background: transparent; border: none; box-shadow: none; color: transparent; }
+.vis-item.span-bar { border: none; color: transparent; }
+.vis-item.span-archive { background-color: var(--muted); }
+.vis-item.span-forecast { background-color: var(--link); }
+.vis-item.span-tail { background-color: transparent; border: 1px dashed var(--muted); }
 svg.disk-lines circle { pointer-events: auto; }
 #disk-tip { position: fixed; z-index: 20; visibility: hidden; pointer-events: none; }
 .legend { display: flex; gap: 1rem; padding: 0.35rem 0.75rem 0; font-size: 0.75rem; color: var(--muted); }
@@ -99,6 +103,9 @@ svg.disk-lines circle { pointer-events: auto; }
     <span><i class="swatch" style="background:var(--accent-start)"></i>ingest</span>
     <span><i class="swatch" style="background:var(--accent-end)"></i>process</span>
     <span><i class="swatch" style="background:var(--alert)"></i>failed</span>
+    <span><i class="swatch" style="background:var(--muted)"></i>archive</span>
+    <span><i class="swatch" style="background:var(--link)"></i>forecast</span>
+    <span><i class="swatch" style="background:transparent;border:1px dashed var(--muted)"></i>past forecast</span>
     <span><i class="swatch" style="background:var(--text)"></i>disk used, GB</span>
   </div>
   <div id="chart"></div>
@@ -177,16 +184,28 @@ function draw(data) {
     start: new Date(item.start),
     end: item.end ? new Date(item.end) : new Date(now),
   }));
+  const spans = data.spans || [];
+  const day = 24 * 3600 * 1000;
+  let earliest = now - 7 * day;
+  let rangeEnd = now + 60 * 60 * 1000;
+  for (const span of spans) {
+    const start = new Date(span.history_start).getTime();
+    const end = new Date(span.data_end || span.forecast_end).getTime();
+    if (Number.isFinite(start)) earliest = Math.min(earliest, start);
+    if (Number.isFinite(end)) rangeEnd = Math.max(rangeEnd, end);
+  }
+  earliest -= day;
+  rangeEnd += day;
   const options = {
     stack: false,
     orientation: "top",
     zoomMin: 60 * 1000,
-    zoomMax: 7 * 24 * 3600 * 1000,
+    zoomMax: rangeEnd - earliest,
     height: chartEl.clientHeight,
     start: new Date(now - 6 * 3600 * 1000),
     end: new Date(now + 60 * 60 * 1000),
-    min: new Date(now - 7 * 24 * 3600 * 1000),
-    max: new Date(now + 60 * 60 * 1000),
+    min: new Date(earliest),
+    max: new Date(rangeEnd),
     tooltip: { followMouse: true, overflowMethod: "cap" },
     format: {
       minorLabels: (date, scale) => utcLabel(date, scale === "day" || scale === "weekday"),
@@ -199,6 +218,39 @@ function draw(data) {
     },
   };
   const groups = data.groups.slice();
+  const spanLabel = { icon_global: "icon", icon_eu: "icon-eu", icon_d2: "icon-d2" };
+  for (const key of ["icon_global", "icon_eu", "icon_d2"]) {
+    const span = spans.find((row) => row.model === key);
+    const label = spanLabel[key];
+    const id = "span-" + label;
+    groups.push({ id, content: label + " span", order: groups.length });
+    if (!span) continue;
+    const segments = [
+      ["archive", span.history_start, span.run],
+      ["forecast", span.run, span.forecast_end],
+    ];
+    if (span.data_end > span.forecast_end) segments.push(["tail", span.forecast_end, span.data_end]);
+    for (const [kind, start, end] of segments) {
+      if (!start || !end || start === end) continue;
+      items.push({
+        id: id + "-" + kind,
+        group: id,
+        start: new Date(start),
+        end: new Date(end),
+        type: "range",
+        className: "span-bar span-" + kind,
+        title: [
+          label,
+          kind === "tail" ? "past forecast" : kind,
+          start + " – " + end,
+          "history " + span.history_start,
+          "run " + span.run,
+          "forecast " + span.forecast_end,
+          "data " + span.data_end,
+        ].join("<br>"),
+      });
+    }
+  }
   const latest = (data.disk || [])[data.disk.length - 1];
   groups.push({
     id: "disk",

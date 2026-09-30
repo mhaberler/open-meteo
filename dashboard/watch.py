@@ -3,8 +3,10 @@
 
 from __future__ import annotations
 
+import json
 import os
 import time
+import urllib.request
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -14,14 +16,29 @@ from phases import DB_PATH, JOBS, LOG_DIR, Follower, Store
 
 STATIC = Path(__file__).resolve().parent / "static"
 PORT = int(os.environ.get("INGEST_PORT", "8091"))
+SPAN_URL = os.environ.get(
+    "SPAN_URL",
+    "http://127.0.0.1:8010/v1/span?models=icon_global,icon_eu,icon_d2&timeformat=iso8601",
+)
 STORE = Store(DB_PATH)
+
+
+def fetch_spans() -> list:
+    try:
+        with urllib.request.urlopen(SPAN_URL, timeout=2) as resp:
+            body = json.load(resp)
+        return list(body.get("models") or [])
+    except Exception:
+        return []
 
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:  # noqa: N802
         path = urlparse(self.path).path
         if path == "/phases.json":
-            body = __import__("json").dumps(STORE.query()).encode()
+            payload = STORE.query()
+            payload["spans"] = fetch_spans()
+            body = json.dumps(payload).encode()
             self._send(200, "application/json; charset=utf-8", body)
             return
         if path in ("/ui", "/ui/"):

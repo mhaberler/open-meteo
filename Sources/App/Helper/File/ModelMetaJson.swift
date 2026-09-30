@@ -33,7 +33,6 @@ import OmFileFormat
 
 /**
  TODO:
- - run end lenght might be too short for side-runs
  - license
  - name of provider
  - spatial resolution
@@ -56,7 +55,8 @@ struct ModelUpdateMetaJson: Codable, Sendable {
     /// Data temporal resolution in seconds. E.g. 3600 for 1-hourly data
     let temporal_resolution_seconds: Int
 
-    /// End of updated timerange. The last timestep is not included! -> Probably not reliable at all.... Short runs, upper model runs, etc....
+    /// Latest stored end of the time series. The last timestep is not included.
+    /// A shorter run does not move this backward; hours still in the chunk files stay advertised.
     let data_end_time: Int
 
     /// E.g. `3600` for updates every 1 hour
@@ -87,15 +87,20 @@ struct ModelUpdateMetaJson: Codable, Sendable {
         Timestamp(last_run_availability_time)
     }
 
-    /// Write a new meta data JSON
+    /// Write a new meta data JSON. `data_end_time` is the later of this flush and the value already on disk.
     static func update(domain: GenericDomain, run: Timestamp, end: Timestamp, now: Timestamp = .now()) throws {
+        let path = ModelUpdateMetaFile(domain: domain.domainRegistry)
+        try path.createDirectory()
+        let pathString = path.getFilePath()
+        let flushEnd = end.timeIntervalSince1970
+        let storedEnd = (try? Self.readFrom(path: pathString))?.data_end_time ?? flushEnd
         let meta = ModelUpdateMetaJson(
             last_run_initialisation_time: run.timeIntervalSince1970,
             last_run_modification_time: now.timeIntervalSince1970,
             last_run_availability_time: now.timeIntervalSince1970,
             temporal_resolution_seconds: domain.dtSeconds,
             // data_start_time: 0,
-            data_end_time: end.timeIntervalSince1970,
+            data_end_time: max(storedEnd, flushEnd),
             update_interval_seconds: domain.updateIntervalSeconds,
             chunk_time_length: domain.omFileLength,
             /*chunk_file_dimensions: [
@@ -106,9 +111,6 @@ struct ModelUpdateMetaJson: Codable, Sendable {
             grid_bounds: domain.grid.gridBounds,*/
             crs_wkt: domain.grid.crsWkt2
         )
-        let path = ModelUpdateMetaFile(domain: domain.domainRegistry)
-        try path.createDirectory()
-        let pathString = path.getFilePath()
         try meta.writeTo(path: pathString)
     }
 
