@@ -10,10 +10,10 @@ DWD has no outage that matches the 9–10 October logs. The 6 October 2026 grid 
 
 ## Changes
 
-1. In `makeNewHttpClient` and `http1Client` (`Sources/App/configure.swift`), set `concurrentHTTP1ConnectionsPerHostSoftLimit` to the job’s `--concurrent` value (32). The pool is currently created with only `idleTimeout`.
+1. `download` accepts `--connections-per-host`. It sets `concurrentHTTP1ConnectionsPerHostSoftLimit` on `dedicatedHttpClient` for that process. Omitted, the limit stays 8. `http1Client` is unchanged.
 
 2. Run one `hiresTemp` job at a time. A limit of 32 per process is 96 connections to DWD while the three domains overlap, which stretches the 5-minute read timeout. Leave the `heidiVars` minutes as they are.
 
-3. Give icon-d2 `hiresTemp` more than 2 hours. `deadLineHours` in `DownloadIconCommand` is domain-wide. Raise it for `hiresTemp`, or pass `--max-forecast-hour` until a full run fits in 2 hours.
+3. `download` accepts `--deadline-hours` (whole hours). It overrides the Curl deadline for surface elevation, HHL, and the GRIB download. `Process.alarm` stays one hour past that value. Omitted, icon-d2 and icon-d2-eps stay at 2 hours and the other ICON domains stay at 5.
 
-`--concurrent 8` matches the current pool and stops the timeout storm without a code change. A full icon-d2 run can still miss the 2-hour deadline at that rate. `build/manual-ingest.sh` uses 12, which still queues behind the limit of 8.
+`--concurrent 8` still matches the default pool when `--connections-per-host` is omitted. A full icon-d2 run can still miss the 2-hour deadline at that rate. `build/manual-ingest.sh` uses 12, which still queues behind the default limit of 8.

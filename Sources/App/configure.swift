@@ -116,6 +116,17 @@ extension Application {
         typealias Value = HTTPClient
     }
 
+    fileprivate struct Http1ConnectionsPerHostSoftLimitKey: StorageKey {
+        typealias Value = Int
+    }
+
+    /// HTTP/1 connections per host for `dedicatedHttpClient`. Read once, when that client is first created.
+    /// `http1Client` keeps the async-http-client default of 8.
+    var dedicatedHttpClientConnectionsPerHost: Int? {
+        get { self.storage[Http1ConnectionsPerHostSoftLimitKey.self] }
+        set { self.storage[Http1ConnectionsPerHostSoftLimitKey.self] = newValue }
+    }
+
     /// Get dedicated HTTPClient instance with a dedicated threadpool
     var dedicatedHttpClient: HTTPClient {
         let lock = self.locks.lock(for: HttpClientKey.self)
@@ -124,7 +135,7 @@ extension Application {
         if let existing = self.storage[HttpClientKey.self] {
             return existing
         }
-        let new = makeNewHttpClient()
+        let new = makeNewHttpClient(connectionsPerHost: self.storage[Http1ConnectionsPerHostSoftLimitKey.self])
         self.storage.set(HttpClientKey.self, to: new) {
             try $0.syncShutdown()
         }
@@ -157,13 +168,20 @@ extension Application {
         return new
     }
 
-    /// Create a new HTTP client instance. `shutdown` must be called after using it
-    func makeNewHttpClient(httpVersion: HTTPClient.Configuration.HTTPVersion = .automatic, redirectConfiguration: HTTPClient.Configuration.RedirectConfiguration? = nil) -> HTTPClient {
+    /// Create a new HTTP client instance. `shutdown` must be called after using it.
+    /// `connectionsPerHost` sets `concurrentHTTP1ConnectionsPerHostSoftLimit`. Omitted, the client keeps the default of 8.
+    func makeNewHttpClient(httpVersion: HTTPClient.Configuration.HTTPVersion = .automatic, redirectConfiguration: HTTPClient.Configuration.RedirectConfiguration? = nil, connectionsPerHost: Int? = nil) -> HTTPClient {
+        let connectionPool: HTTPClient.Configuration.ConnectionPool
+        if let connectionsPerHost {
+            connectionPool = .init(idleTimeout: .minutes(10), concurrentHTTP1ConnectionsPerHostSoftLimit: connectionsPerHost)
+        } else {
+            connectionPool = .init(idleTimeout: .minutes(10))
+        }
         // try again with very high timeouts, so only the curl internal timers are used
         var configuration = HTTPClient.Configuration(
             redirectConfiguration: redirectConfiguration ?? .follow(max: 5, allowCycles: false),
             timeout: .init(connect: .seconds(30), read: .minutes(5)),
-            connectionPool: .init(idleTimeout: .minutes(10)))
+            connectionPool: connectionPool)
         configuration.httpVersion = httpVersion
 
         return HTTPClient(

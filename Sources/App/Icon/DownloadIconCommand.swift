@@ -165,6 +165,12 @@ struct DownloadIconCommand: AsyncCommand {
         @Option(name: "concurrent", short: "c", help: "Number of concurrent download/conversion jobs")
         var concurrent: Int?
 
+        @Option(name: "connections-per-host", help: "HTTP/1 connections per host for this process. Default 8")
+        var connectionsPerHost: Int?
+
+        @Option(name: "deadline-hours", help: "Download deadline in whole hours. Default 2 for icon-d2 and icon-d2-eps, 5 otherwise. The process alarm is one hour later")
+        var deadlineHours: Int?
+
         @Flag(name: "create-netcdf")
         var createNetcdf: Bool
 
@@ -215,7 +221,7 @@ struct DownloadIconCommand: AsyncCommand {
     /**
      Convert surface elevation. Out of grid positions are NaN. Sea grid points are -999.
      */
-    func convertSurfaceElevation(application: Application, domain: IconDomains, run: Timestamp) async throws {
+    func convertSurfaceElevation(application: Application, domain: IconDomains, run: Timestamp, deadLineHours: Double) async throws {
         let logger = application.logger
         let surfaceElevationFileOm = domain.surfaceElevationFileOm.getFilePath()
         if FileManager.default.fileExists(atPath: surfaceElevationFileOm) {
@@ -226,7 +232,6 @@ struct DownloadIconCommand: AsyncCommand {
         let downloadDirectory = domain.downloadDirectory
         try FileManager.default.createDirectory(atPath: downloadDirectory, withIntermediateDirectories: true)
 
-        let deadLineHours: Double = (domain == .iconD2 || domain == .iconD2Eps) ? 2 : 5
         let curl = Curl(logger: logger, client: application.dedicatedHttpClient, deadLineHours: deadLineHours)
         let domainPrefix = "\(domain.rawValue)_\(domain.region)"
         let cdo = try await CdoHelper(domain: domain, logger: logger, curl: curl)
@@ -275,7 +280,7 @@ struct DownloadIconCommand: AsyncCommand {
     /// Convert HHL (half-level heights ASL) to single 3D static OM file [ny, nx, nHalf] (level last).
     /// One file per domain (no per-level chunks). Derived full-level heights are computed on read (lazy).
     /// Follows exact convertSurfaceElevation patterns for URL/Cdo/idempotency.
-    func convertHhlHeights(application: Application, domain: IconDomains, run: Timestamp) async throws {
+    func convertHhlHeights(application: Application, domain: IconDomains, run: Timestamp, deadLineHours: Double) async throws {
         let logger = application.logger
         let hhlFile = domain.hhlFileOm.getFilePath()
         if FileManager.default.fileExists(atPath: hhlFile) {
@@ -287,7 +292,6 @@ struct DownloadIconCommand: AsyncCommand {
         let downloadDirectory = domain.downloadDirectory
         try FileManager.default.createDirectory(atPath: downloadDirectory, withIntermediateDirectories: true)
 
-        let deadLineHours: Double = (domain == .iconD2 || domain == .iconD2Eps) ? 2 : 5
         let curl = Curl(logger: logger, client: application.dedicatedHttpClient, deadLineHours: deadLineHours)
         let domainPrefix = "\(domain.rawValue)_\(domain.region)"
         let cdo = try await CdoHelper(domain: domain, logger: logger, curl: curl)
@@ -350,13 +354,12 @@ struct DownloadIconCommand: AsyncCommand {
     }
 
     /// Download ICON global, eu and d2 *.grid2.bz2 files
-    func downloadIcon(application: Application, domain: IconDomains, run: Timestamp, variables: [any IconVariableDownloadable], concurrent: Int, uploadS3Bucket: String?, realm: String?, maxForecastHour: Int?) async throws -> (handles: [GenericVariableHandle], handles15minIconD2: [GenericVariableHandle]) {
+    func downloadIcon(application: Application, domain: IconDomains, run: Timestamp, variables: [any IconVariableDownloadable], concurrent: Int, uploadS3Bucket: String?, realm: String?, maxForecastHour: Int?, deadLineHours: Double) async throws -> (handles: [GenericVariableHandle], handles15minIconD2: [GenericVariableHandle]) {
         let logger = application.logger
         let client = application.http.client.shared
         let downloadDirectory = domain.downloadDirectory
         try FileManager.default.createDirectory(atPath: downloadDirectory, withIntermediateDirectories: true)
 
-        let deadLineHours: Double = (domain == .iconD2 || domain == .iconD2Eps) ? 2 : 5
         let curl = Curl(logger: logger, client: application.dedicatedHttpClient, deadLineHours: deadLineHours, waitAfterLastModified: 120)
         Process.alarm(seconds: Int(deadLineHours + 1) * 3600)
         defer { Process.alarm(seconds: 0) }
@@ -725,13 +728,25 @@ struct DownloadIconCommand: AsyncCommand {
 
         let variables = onlyVariables ?? group.variables(domain: domain)
 
+        if let connectionsPerHost = signature.connectionsPerHost, connectionsPerHost < 1 {
+            fatalError("--connections-per-host must be at least 1")
+        }
+        if let deadlineHours = signature.deadlineHours, deadlineHours < 1 {
+            fatalError("--deadline-hours must be at least 1")
+        }
+        if let connectionsPerHost = signature.connectionsPerHost {
+            context.application.dedicatedHttpClientConnectionsPerHost = connectionsPerHost
+        }
+        let connectionsPerHost = signature.connectionsPerHost ?? 8
+        let deadLineHours = Double(signature.deadlineHours ?? ((domain == .iconD2 || domain == .iconD2Eps) ? 2 : 5))
+
         let logger = context.application.logger
         let generateFullRun = domain.countEnsembleMember == 1
-        logger.info("Downloading domain '\(domain.rawValue)' run '\(run.iso8601_YYYY_MM_dd_HH_mm)'")
-        try await convertSurfaceElevation(application: context.application, domain: domain, run: run)
-        try await convertHhlHeights(application: context.application, domain: domain, run: run)
+        logger.info("Downloading domain '\(domain.rawValue)' run '\(run.iso8601_YYYY_MM_dd_HH_mm)' (HTTP/1 connections per host \(connectionsPerHost), deadline \(Int(deadLineHours)) hours)")
+        try await convertSurfaceElevation(application: context.application, domain: domain, run: run, deadLineHours: deadLineHours)
+        try await convertHhlHeights(application: context.application, domain: domain, run: run, deadLineHours: deadLineHours)
 
-        let (handles, handles15minIconD2) = try await downloadIcon(application: context.application, domain: domain, run: run, variables: variables, concurrent: nConcurrent, uploadS3Bucket: signature.uploadS3Bucket, realm: group.realm, maxForecastHour: signature.maxForecastHour)
+        let (handles, handles15minIconD2) = try await downloadIcon(application: context.application, domain: domain, run: run, variables: variables, concurrent: nConcurrent, uploadS3Bucket: signature.uploadS3Bucket, realm: group.realm, maxForecastHour: signature.maxForecastHour, deadLineHours: deadLineHours)
 
         if domain == .iconD2 {
             // ICON-D2 downloads 15min data as well
