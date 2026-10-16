@@ -154,6 +154,21 @@ struct DownloadIconCommand: AsyncCommand {
     }
 
     /**
+     Open sea is stored as −999. A lake cell has `FR_LAND` near 0 and a real `HSURF`;
+     `FR_LAKE` is added before the 0.5 test so that cell keeps its orography.
+     */
+    static func maskOpenSea(hsurf: [Float], landFraction: [Float], lakeFraction: [Float]) -> [Float] {
+        precondition(hsurf.count == landFraction.count && hsurf.count == lakeFraction.count)
+        var masked = hsurf
+        for i in masked.indices {
+            if landFraction[i] + lakeFraction[i] < 0.5 {
+                masked[i] = -999
+            }
+        }
+        return masked
+    }
+
+    /**
      Convert surface elevation. Out of grid positions are NaN. Sea grid points are -999.
      Lake cells stay at HSURF: FR_LAND is near 0 there, so FR_LAKE is added before the sea test.
      An existing elevation file is left untouched; delete it to regenerate the mask.
@@ -205,13 +220,7 @@ struct DownloadIconCommand: AsyncCommand {
             lakeFraction = [Float](repeating: 0, count: landFraction.count)
         }
 
-        // Open sea is masked. A lake cell has low FR_LAND but a real HSURF, so it stays.
-        precondition(hsurf.count == landFraction.count && hsurf.count == lakeFraction.count)
-        for i in hsurf.indices {
-            if landFraction[i] + lakeFraction[i] < 0.5 {
-                hsurf[i] = -999
-            }
-        }
+        hsurf = Self.maskOpenSea(hsurf: hsurf, landFraction: landFraction, lakeFraction: lakeFraction)
 
         if needsPrimary {
             try await hsurf.writeStaticOmFile(file: outputs.primary.surfaceElevationFileOm, grid: outputs.primary.grid, application: application, uploadS3Bucket: uploadS3Bucket)
