@@ -225,7 +225,8 @@ struct GenericReader<Domain: GenericDomain, Variable: GenericVariable>: GenericR
 
     func getStatic(type: ReaderStaticVariable) async throws -> Float? {
         if type == .hhl {
-            return try await getStatic(type: .elevation)
+            // A 3D column, not a scalar. Read it with `readColumnFromStaticFile`.
+            return nil
         }
         guard let file = await domain.getStaticFile(type: type) else {
             return nil
