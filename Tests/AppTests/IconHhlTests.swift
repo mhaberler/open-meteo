@@ -133,6 +133,15 @@ import OmFileFormat
         }
     }
 
+    /// Only sibling names are diverted to the model-level writer.
+    @Test func divertedNames() {
+        #expect(IconModelLevelVariable(rawValue: "temperature_level65")?.kind == .level(.temperature, 65))
+        #expect(IconModelLevelVariable(rawValue: "temperature_80m")?.kind == .surface(.temperature_80m))
+        #expect(IconModelLevelVariable(rawValue: "freezing_level_height") == nil)
+        #expect(IconModelLevelVariable(rawValue: "temperature_850hPa") == nil)
+        #expect(IconModelLevelVariable(rawValue: "temperature_2m") == nil)
+    }
+
     @Test func hhlColumnCacheMemoisesByReference() {
         let cache = HhlColumnCache()
         #expect(cache.column == nil)
