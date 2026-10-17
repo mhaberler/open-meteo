@@ -161,6 +161,14 @@ import OmFileFormat
         #expect(fixed.getFlatBuffersMeta().altitude == 80)
     }
 
+    /// heidiVars and the parent surface job both run on the parent. They must not share spatial files.
+    @Test func spatialRealmsDoNotClash() {
+        #expect(DownloadIconCommand.VariableGroup.heidiVars.realm == "heidi")
+        #expect(DownloadIconCommand.VariableGroup.surface.realm == nil)
+        #expect(DownloadIconCommand.VariableGroup.hiresTemp.realm == nil)
+        #expect(DownloadIconCommand.VariableGroup.hiresTemp.siblingRealm == "hires-temp")
+    }
+
     @Test func hhlMissingFileErrorIsDescriptive() {
         let msg = "\(IconModelLevelError.staticFileMissing(domain: "icon-d2-native"))"
         #expect(msg.contains("hhl.om"))
