@@ -128,6 +128,11 @@ extension GenericDomain {
     var hhlFileOm: OmFileType {
         .staticFile(domain: domainRegistryStatic ?? domainRegistry, variable: "hhl", chunk: nil)
     }
+
+    /// Unmasked HSURF. Distinct from `surfaceElevationFileOm`, which sets sea points to -999.
+    var modelElevationRawFileOm: OmFileType {
+        .staticFile(domain: domainRegistryStatic ?? domainRegistry, variable: "HSURF_raw", chunk: nil)
+    }
 }
 
 /**
