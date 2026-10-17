@@ -201,7 +201,8 @@ struct DownloadIconCommand: AsyncCommand {
         let downloader = IconGribDownloader(domain: domain, curl: curl, remapper: outputs.nativeDomain == nil ? remapper : nil)
         let surface = try await downloader.downloadAndRemap(field: ("HSURF", "single-level", nil), run: run, leadSeconds: 0)
         let rawHsurf = surface.data.data
-        if needsRaw {
+        // Another job may have written it during the download. `writeOmFile` traps on an existing file.
+        if needsRaw && !FileManager.default.fileExists(atPath: outputs.primary.modelElevationRawFileOm.getFilePath()) {
             try await rawHsurf.writeStaticOmFile(file: outputs.primary.modelElevationRawFileOm, grid: outputs.primary.grid, application: application, uploadS3Bucket: uploadS3Bucket)
         }
         guard needsPrimary || missingRemapped != nil else {
@@ -249,7 +250,8 @@ struct DownloadIconCommand: AsyncCommand {
         let logger = application.logger
         let domain = outputs.source
         let hhlFile = outputs.primary.hhlFileOm
-        if FileManager.default.fileExists(atPath: hhlFile.getFilePath()) {
+        let path = hhlFile.getFilePath()
+        if FileManager.default.fileExists(atPath: path) {
             return
         }
         let nHalf = domain.numberOfModelHalfLevels
@@ -278,7 +280,11 @@ struct DownloadIconCommand: AsyncCommand {
         }
         let chunkY = min(ny, 32)
         let chunkX = min(nx, max(1, 1024 / chunkY))
-        let path = hhlFile.getFilePath()
+        // Another job may have written the file during the download. `writeOmFile` traps on an existing file.
+        if FileManager.default.fileExists(atPath: path) {
+            logger.info("HHL for \(domain) was written by another job")
+            return
+        }
         try stacked.writeOmFile(file: path, dimensions: [ny, nx, nlev], chunks: [chunkY, chunkX, nlev], compression: .pfor_delta2d, scalefactor: 1)
         for queue in await application.s3SyncManager.getQueues(bucketsOpt: uploadS3Bucket) ?? [] {
             let uploads = queue.startMultiPartUploads()
