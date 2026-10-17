@@ -1,18 +1,24 @@
 #!/usr/bin/env python3
-"""Compare model-level API contracts against https://open-meteo.wetterheidi.de.
+"""Check model-level API contracts against a server.
+
+Default host is https://open-meteo.wetterheidi.de (regular lat-lon). To test a native
+server, pass --host and --model, e.g.
+    icon_model_level_regression.py --host http://127.0.0.1:8080 --model icon_d2=dwd_icon_d2_native
 
 Heights are a property of the grid and should match within 1 m. Thermodynamic
 profiles are only compared when the runs look like the same one. The domain
 string in the response is not part of the contract.
 """
 
+import argparse
 import json
 import sys
 import urllib.error
 import urllib.parse
 import urllib.request
 
-HOST = "https://open-meteo.wetterheidi.de/v1/forecast"
+DEFAULT_HOST = "https://open-meteo.wetterheidi.de"
+HOST = DEFAULT_HOST + "/v1/forecast"
 POINTS = [
     # icon_d2, Munich. Host elevation 531 m. Lowest full level is 10 m AGL.
     {"domain": "icon_d2", "latitude": 48.14, "longitude": 11.58, "elevation": 531, "full": 65, "top_height": None},
@@ -42,9 +48,27 @@ def fail(message):
     return 1
 
 
+def parse_args():
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--host", default=DEFAULT_HOST, help="Base URL without /v1/forecast")
+    parser.add_argument(
+        "--model", action="append", default=[], metavar="POINT=MODEL",
+        help="Replace the models= value for a point, e.g. icon_d2=dwd_icon_d2_native. Repeatable.",
+    )
+    parser.add_argument("--only", action="append", default=[], help="Run only these points (icon_d2, icon_eu)")
+    return parser.parse_args()
+
+
 def main():
+    global HOST
+    args = parse_args()
+    HOST = args.host.rstrip("/") + "/v1/forecast"
+    models = dict(item.split("=", 1) for item in args.model)
     errors = 0
     for point in POINTS:
+        if args.only and point["domain"] not in args.only:
+            continue
+        model = models.get(point["domain"], point["domain"])
         hourly = ",".join([
             f"height_agl_level{point['full']}",
             "height_level1",
@@ -56,7 +80,7 @@ def main():
             "latitude": point["latitude"],
             "longitude": point["longitude"],
             "hourly": hourly,
-            "models": point["domain"],
+            "models": model,
             "windspeed_unit": "ms",
             "forecast_days": 1,
         }
