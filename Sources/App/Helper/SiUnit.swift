@@ -42,7 +42,15 @@ protocol ApiUnitsSelectable {
 }
 
 extension SiUnit: @retroactive @unchecked Sendable {
-    
+    /// JSON, CSV, and XLSX decimals. Specific humidity keeps five places.
+    var apiSignificantDigits: Int {
+        switch self {
+        case .gramPerKilogram:
+            return 5
+        default:
+            return significantDigits
+        }
+    }
 }
 
 struct DataAndUnit: Sendable {
