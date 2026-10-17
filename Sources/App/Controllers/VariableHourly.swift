@@ -1808,12 +1808,21 @@ struct VariableHourlyDeriver<Reader: GenericReaderProtocol>: GenericDeriverProto
 
             }
         case .temperature_80m:
+            if Reader.MixingVar.self == IconModelLevelVariable.self {
+                return .direct(Reader.variableFromString("temperature_80m"))
+            }
             return .direct(Reader.variableFromString("temperature_100m"))
         case .temperature_120m:
+            if Reader.MixingVar.self == IconModelLevelVariable.self {
+                return .direct(Reader.variableFromString("temperature_120m"))
+            }
             return
                 .direct(Reader.variableFromString("temperature_150m")) ??
                 .direct(Reader.variableFromString("temperature_100m"))
         case .temperature_180m:
+            if Reader.MixingVar.self == IconModelLevelVariable.self {
+                return .direct(Reader.variableFromString("temperature_180m"))
+            }
             return .direct(Reader.variableFromString("temperature_200m")) ??
                 .direct(Reader.variableFromString("temperature_150m"))
         case .global_tilted_irradiance:
