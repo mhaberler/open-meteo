@@ -151,6 +151,16 @@ import OmFileFormat
         #expect(cache.column == [9, 8])
     }
 
+    /// The SDK has no model-level field. A level must not be reported as an altitude in metres.
+    @Test func flatBuffersDoesNotMapLevelToAltitude() throws {
+        let level = try #require(ForecastHeightVariable(rawValue: "temperature_level65"))
+        #expect(level.getFlatBuffersMeta().variable == .undefined)
+        #expect(level.getFlatBuffersMeta().altitude == 0)
+        let fixed = try #require(ForecastHeightVariable(rawValue: "temperature_80m"))
+        #expect(fixed.getFlatBuffersMeta().variable == .temperature)
+        #expect(fixed.getFlatBuffersMeta().altitude == 80)
+    }
+
     @Test func hhlMissingFileErrorIsDescriptive() {
         let msg = "\(IconModelLevelError.staticFileMissing(domain: "icon-d2-native"))"
         #expect(msg.contains("hhl.om"))
