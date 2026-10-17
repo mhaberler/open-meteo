@@ -284,21 +284,16 @@ struct DownloadIconCommand: AsyncCommand {
 
         let curl = Curl(logger: logger, client: application.dedicatedHttpClient, deadLineHours: feed.deadlineHours)
         let downloader = IconGribDownloader(domain: feed, curl: curl, gridIdentity: outputs.nativeDomain.nativeGridFile.identity)
-        var levels: [[Float]] = []
-        levels.reserveCapacity(nHalf)
-        for level in 1...nHalf {
-            let field = try await downloader.download(field: ("HHL", "model-level", level), run: run, leadSeconds: 0)
-            levels.append(field.data.data)
-        }
-
         let ny = outputs.primary.grid.ny
         let nx = outputs.primary.grid.nx
         let nlev = nHalf
+        // Fill the level-last array directly. Global holds 2.95 M cells x 121 levels.
         var stacked = [Float](repeating: .nan, count: ny * nx * nlev)
-        for (levelIndex, levelData) in levels.enumerated() {
-            precondition(levelData.count == ny * nx, "HHL level \(levelIndex + 1) count \(levelData.count) != \(ny * nx)")
+        for level in 1...nHalf {
+            let levelData = try await downloader.download(field: ("HHL", "model-level", level), run: run, leadSeconds: 0).data.data
+            precondition(levelData.count == ny * nx, "HHL level \(level) count \(levelData.count) != \(ny * nx)")
             for (spatialIndex, value) in levelData.enumerated() {
-                stacked[spatialIndex * nlev + levelIndex] = value
+                stacked[spatialIndex * nlev + level - 1] = value
             }
         }
         let chunkY = min(ny, 32)
