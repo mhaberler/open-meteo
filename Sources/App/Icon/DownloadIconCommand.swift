@@ -556,18 +556,20 @@ struct DownloadIconCommand: AsyncCommand {
         var groupVariables: [any IconVariableDownloadable]
         switch group {
         case .all:
-            groupVariables = IconSurfaceVariable.allCases + domain.levels.reversed().flatMap { level in
+            groupVariables = IconSurfaceVariable.allCases.filter {
+                $0 != .model_elevation && $0 != .surface_pressure_model
+            } + domain.levels.reversed().flatMap { level in
                 IconPressureVariableType.allCases.map { variable in
                     IconPressureVariable(variable: variable, level: level)
                 }
             }
         case .surface:
             groupVariables = IconSurfaceVariable.allCases.filter {
-                !($0.getVarAndLevel(domain: domain)?.cat == "model-level")
+                $0 != .model_elevation && $0 != .surface_pressure_model && !($0.getVarAndLevel(domain: domain)?.cat == "model-level")
             }
         case .surfaceAndPressure:
             groupVariables = IconSurfaceVariable.allCases.filter {
-                !($0.getVarAndLevel(domain: domain)?.cat == "model-level")
+                $0 != .model_elevation && $0 != .surface_pressure_model && !($0.getVarAndLevel(domain: domain)?.cat == "model-level")
             } + domain.levels.reversed().flatMap { level in
                 IconPressureVariableType.allCases.map { variable in
                     IconPressureVariable(variable: variable, level: level)

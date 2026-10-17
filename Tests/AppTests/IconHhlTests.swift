@@ -34,4 +34,14 @@ import OmFileFormat
         let last = try await grid.readColumnFromStaticFile(gridpoint: 4, file: reader)
         #expect(last == [4, 1004, 2004, 3004])
     }
+
+    @Test func levelNamesRoundTrip() {
+        let column = ForecastHeightVariable(rawValue: "temperature_level65")
+        #expect(column?.modelLevel == true)
+        #expect(column?.rawValue == "temperature_level65")
+        let fixed = ForecastHeightVariable(rawValue: "temperature_80m")
+        #expect(fixed?.modelLevel == false)
+        #expect(fixed?.rawValue == "temperature_80m")
+        #expect(ForecastVariable(rawValue: "wind_w_level66")?.rawValue == "wind_w_level66")
+    }
 }
