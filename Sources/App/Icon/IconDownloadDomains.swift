@@ -26,6 +26,9 @@ enum IconDownloadDomains: String, CaseIterable, Sendable {
         if let surface = variable as? IconSurfaceVariable {
             return getSurfaceVarAndLevel(surface)
         }
+        if let modelLevel = variable as? IconModelLevelVariable {
+            return modelLevel.getVarAndLevel(domain: self)
+        }
         guard let pressure = variable as? IconPressureVariable else { return nil }
         if self == .iconD2Ruc && !levels.contains(pressure.level) { return nil }
         let name: String
@@ -231,6 +234,9 @@ enum IconDownloadDomains: String, CaseIterable, Sendable {
 
     /// Vmax and precip always are empty in the first hour. Weather codes differ a lot in hour 0.
     func skipHour(_ variable: any IconVariableDownloadable, hour: Int, forDownload: Bool, run: Timestamp) -> Bool {
+        if let modelLevel = variable as? IconModelLevelVariable {
+            return modelLevel.skipHour(hour: hour, domain: self, forDownload: forDownload, run: run)
+        }
         if self == .aicon { return hour == 0 }
         guard let variable = variable as? IconSurfaceVariable else { return false }
         if variable == .direct_radiation && self == .iconEps && hour % 3 != 0 {

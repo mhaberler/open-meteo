@@ -45,6 +45,86 @@ import OmFileFormat
         #expect(ForecastVariable(rawValue: "wind_w_level66")?.rawValue == "wind_w_level66")
     }
 
+    /// `hiresTemp` is the full column. `modelLevel` stays the 80/120/180 m surface fields.
+    @Test func hiresTempCoversAllLevels() {
+        let expectedFullVars: Set<IconModelLevelVariableType> = [
+            .wind_u_component, .wind_v_component, .temperature, .specific_humidity, .pressure,
+            .cloud_water, .cloud_ice, .cloud_cover
+        ]
+        for domain in [IconDownloadDomains.iconD2, .iconEu, .icon] {
+            let n = domain.numberOfModelFullLevels
+            let nHalf = domain.numberOfModelHalfLevels
+            let vars = DownloadIconCommand.VariableGroup.hiresTemp.variables(domain: domain)
+            let levelVars = vars.compactMap { $0 as? IconModelLevelVariable }
+            #expect(levelVars.count == vars.count)
+            #expect(levelVars.count == n * expectedFullVars.count + nHalf)
+            let fullVars = levelVars.filter { !$0.variable.isHalfLevel }
+            let halfVars = levelVars.filter { $0.variable.isHalfLevel }
+            #expect(Set(fullVars.map { $0.level }) == Set(1...n))
+            for level in 1...n {
+                #expect(Set(fullVars.filter { $0.level == level }.map { $0.variable }) == expectedFullVars)
+            }
+            #expect(halfVars.allSatisfy { $0.variable == .wind_w })
+            #expect(halfVars.map { $0.level }.sorted() == Array(1...nHalf))
+        }
+    }
+
+    @Test func modelLevelKeepsUpstreamSemantics() {
+        #expect(DownloadIconCommand.VariableGroup.modelLevel.siblingRealm == nil)
+        #expect(DownloadIconCommand.VariableGroup.hiresTemp.siblingRealm == "hires-temp")
+        for domain in [IconDownloadDomains.iconD2, .iconEu, .icon] {
+            let vars = DownloadIconCommand.VariableGroup.modelLevel.variables(domain: domain)
+            #expect(vars.allSatisfy { ($0 as? IconModelLevelVariable) == nil })
+            #expect(vars.allSatisfy { domain.getVarAndLevel($0)?.cat == "model-level" })
+            let expected = IconSurfaceVariable.allCases.filter { domain.getVarAndLevel($0)?.cat == "model-level" }
+            #expect(vars.count == expected.count)
+        }
+    }
+
+    @Test func heidiVarsIsCuratedSurfaceSet() {
+        let expected = DownloadIconCommand.VariableGroup.heidiSurface
+        #expect(expected.count == 31)
+        for domain in [IconDownloadDomains.iconD2, .iconEu, .icon] {
+            let vars = DownloadIconCommand.VariableGroup.heidiVars.variables(domain: domain)
+            let surface = vars.compactMap { $0 as? IconSurfaceVariable }
+            #expect(surface.count == vars.count)
+            #expect(Set(surface) == expected)
+            #expect(surface.allSatisfy {
+                let cat = domain.getVarAndLevel($0)?.cat ?? "single-level"
+                return cat == "single-level" || cat == "soil-level"
+            })
+        }
+
+        #expect(IconDownloadDomains.iconD2.getVarAndLevel(IconSurfaceVariable.cloud_base)?.variable == "ceiling")
+        #expect(IconDownloadDomains.iconEu.getVarAndLevel(IconSurfaceVariable.cloud_base)?.variable == "ceiling")
+        #expect(IconDownloadDomains.icon.getVarAndLevel(IconSurfaceVariable.cloud_base) == nil)
+        #expect(IconDownloadDomains.iconD2.getVarAndLevel(IconSurfaceVariable.model_elevation) == nil)
+        #expect(IconDownloadDomains.iconD2.getVarAndLevel(IconSurfaceVariable.visibility) == nil)
+
+        func downloadable(_ domain: IconDownloadDomains) -> Int {
+            DownloadIconCommand.VariableGroup.heidiVars.variables(domain: domain)
+                .filter { domain.getVarAndLevel($0) != nil }.count
+        }
+        // VIS is not in the v1 feed, and model_elevation is written from the static file.
+        #expect(downloadable(.icon) == 25)
+        #expect(downloadable(.iconEu) == 28)
+        #expect(downloadable(.iconD2) == 29)
+        #expect(IconDownloadDomains.iconD2.getVarAndLevel(IconSurfaceVariable.surface_pressure_model)?.variable == "ps")
+        #expect(IconDownloadDomains.iconEps.getVarAndLevel(IconSurfaceVariable.surface_pressure_model) == nil)
+        #expect(IconDownloadDomains.iconEuEps.getVarAndLevel(IconSurfaceVariable.surface_pressure_model) == nil)
+        #expect(IconDownloadDomains.iconD2Eps.getVarAndLevel(IconSurfaceVariable.surface_pressure_model) == nil)
+    }
+
+    @Test func heidiVarsOnlyExcludedFromAllCasesGroups() {
+        for domain in [IconDownloadDomains.iconD2, .iconEu, .icon] {
+            for group: DownloadIconCommand.VariableGroup in [.all, .surface, .surfaceAndPressure] {
+                let surface = group.variables(domain: domain).compactMap { $0 as? IconSurfaceVariable }
+                #expect(!surface.contains(.model_elevation))
+                #expect(!surface.contains(.surface_pressure_model))
+            }
+        }
+    }
+
     @Test func specificHumidityUsesLogarithmicCompression() {
         let qv: any GenericVariable = IconModelLevelVariable(variable: .specific_humidity, level: 60)
         let water: any GenericVariable = IconModelLevelVariable(variable: .cloud_water, level: 60)
