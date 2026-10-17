@@ -699,6 +699,10 @@ extension ForecastPressureVariable: FlatBuffersVariable {
 
 extension ForecastHeightVariable: FlatBuffersVariable {
     func getFlatBuffersMeta() -> FlatBufferVariableMeta {
+        if modelLevel {
+            // The SDK has no model-level field. `altitude` would turn `temperature_level65` into 65 m.
+            return .init(variable: .undefined)
+        }
         switch variable {
         case .temperature:
             return .init(variable: .temperature, altitude: Int16(level))
