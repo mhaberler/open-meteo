@@ -210,6 +210,8 @@ import OmFileFormat
         #expect(water.omFileCompression == .pfor_delta2d_int16_logarithmic)
         #expect(ice.omFileCompression == .pfor_delta2d_int16_logarithmic)
         #expect(qv.scalefactor == 10000)
+        let p: any GenericVariable = IconModelLevelVariable(variable: .pressure, level: 1)
+        #expect(p.omFileCompression == .pfor_delta2d_int16_logarithmic)
         #expect(t.omFileCompression == .pfor_delta2d_int16)
         #expect((IconSurfaceVariable.temperature_2m as any GenericVariable).omFileCompression == .pfor_delta2d_int16)
     }
@@ -226,6 +228,23 @@ import OmFileFormat
         #expect(abs(back[0] - 0.0004) < 3e-4)
         for (a, b) in zip(values, back) where a >= 0.05 {
             #expect(abs(a - b) / a < 0.01)
+        }
+    }
+
+    /// Global model-top pressure (about 0.02 hPa) survives, and surface pressure fits int16.
+    @Test func logarithmicCompressionKeepsTopPressure() async throws {
+        let values: [Float] = [0.024, 0.3, 5, 300, 1050]
+        let scale = IconModelLevelVariable(variable: .pressure, level: 1).scalefactor
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("test_p_log.om").path
+        try FileManager.default.removeItemIfExists(at: file)
+        defer { try? FileManager.default.removeItem(atPath: file) }
+        try values.writeOmFile(file: file, dimensions: [values.count], chunks: [values.count], compression: .pfor_delta2d_int16_logarithmic, scalefactor: scale)
+        let reader = try await OmFileReader(file: file).expectArray(of: Float.self)
+        let back = try await reader.read()
+        #expect(abs(back[0] - 0.024) / 0.024 < 0.05)
+        #expect(abs(back[4] - 1050) < 0.3)
+        for (a, b) in zip(values, back) {
+            #expect(abs(a - b) / a < 0.05)
         }
     }
 }
