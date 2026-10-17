@@ -17,7 +17,82 @@ struct DownloadIconCommand: AsyncCommand {
         case pressureLevel
         case pressureLevelGt500
         case pressureLevelLtE500
-        
+        case hiresTemp
+        case heidiVars
+
+        /// Written only by `--group heidiVars`. A constant orography field and the raw surface pressure
+        /// stay out of a routine surface run.
+        static let heidiVarsOnly: Set<IconSurfaceVariable> = [.model_elevation, .surface_pressure_model]
+
+        /// Curated surface set for `--group heidiVars`. The same list is used on every domain.
+        /// Fields DWD does not publish are skipped later, when `getVarAndLevel` returns nil.
+        static let heidiSurface: Set<IconSurfaceVariable> = [
+            .wind_gusts_10m, .wind_u_component_10m, .wind_v_component_10m,
+            .visibility, .pressure_msl, .surface_pressure_model, .model_elevation, .weather_code,
+            .precipitation, .rain, .showers,
+            .snowfall_water_equivalent, .snowfall_convective_water_equivalent, .snowfall_height,
+            .temperature_2m, .relative_humidity_2m,
+            .soil_temperature_0cm, .soil_temperature_6cm, .soil_temperature_18cm, .soil_temperature_54cm,
+            .cloud_cover, .cloud_cover_low, .cloud_cover_mid, .cloud_cover_high,
+            .cloud_base, .freezing_level_height,
+            .cape, .convective_inhibition, .lightning_potential,
+            .convective_cloud_base, .convective_cloud_top
+        ]
+
+        func variables(domain: IconDomains) -> [any IconVariableDownloadable] {
+            switch self {
+            case .all:
+                return IconSurfaceVariable.allCases.filter {
+                    !Self.heidiVarsOnly.contains($0)
+                } + domain.levels.reversed().flatMap { level in
+                    IconPressureVariableType.allCases.map { variable in
+                        IconPressureVariable(variable: variable, level: level)
+                    }
+                }
+            case .surface:
+                return IconSurfaceVariable.allCases.filter {
+                    !Self.heidiVarsOnly.contains($0) && !($0.getVarAndLevel(domain: domain)?.cat == "model-level")
+                }
+            case .surfaceAndPressure:
+                return IconSurfaceVariable.allCases.filter {
+                    !Self.heidiVarsOnly.contains($0) && !($0.getVarAndLevel(domain: domain)?.cat == "model-level")
+                } + domain.levels.reversed().flatMap { level in
+                    IconPressureVariableType.allCases.map { variable in
+                        IconPressureVariable(variable: variable, level: level)
+                    }
+                }
+            case .modelLevel:
+                return IconSurfaceVariable.allCases.filter {
+                    $0.getVarAndLevel(domain: domain)?.cat == "model-level"
+                }
+            case .heidiVars:
+                return Array(Self.heidiSurface)
+            case .hiresTemp:
+                let full: [IconModelLevelVariableType] = [.wind_u_component, .wind_v_component, .temperature, .specific_humidity, .pressure, .cloud_water, .cloud_ice, .cloud_cover]
+                return full.flatMap { variable in
+                    (1...domain.numberOfModelFullLevels).map { IconModelLevelVariable(variable: variable, level: $0) }
+                } + (1...domain.numberOfModelHalfLevels).map { IconModelLevelVariable(variable: .wind_w, level: $0) }
+            case .pressureLevel:
+                return domain.levels.reversed().flatMap { level in
+                    IconPressureVariableType.allCases.map { variable in
+                        IconPressureVariable(variable: variable, level: level)
+                    }
+                }
+            case .pressureLevelGt500:
+                return domain.levels.reversed().flatMap { level in
+                    level > 500 ? IconPressureVariableType.allCases.map { variable in
+                        IconPressureVariable(variable: variable, level: level)
+                    } : []
+                }
+            case .pressureLevelLtE500:
+                return domain.levels.reversed().flatMap { level in
+                    level <= 500 ? IconPressureVariableType.allCases.map { variable in
+                        IconPressureVariable(variable: variable, level: level)
+                    } : []
+                }
+            }
+        }
+
         var realm: String? {
             switch self {
             case .modelLevel:
@@ -27,6 +102,12 @@ struct DownloadIconCommand: AsyncCommand {
             default:
                 return nil
             }
+        }
+
+        /// Realm on the sibling domain. `modelLevel` keeps the unsuffixed `latest.json`.
+        /// `hiresTemp` must not share that file.
+        var siblingRealm: String? {
+            self == .hiresTemp ? "hires-temp" : nil
         }
     }
 
@@ -60,6 +141,12 @@ struct DownloadIconCommand: AsyncCommand {
 
         @Flag(name: "skip-regridding", help: "For icon or icon-native, write only native global output; skip regridded forecasts and elevation")
         var skipRegridding: Bool
+
+        @Flag(name: "update-meta", help: "Advance static/meta.json even when this run has no surface marker variable")
+        var updateMeta: Bool
+
+        @Option(name: "max-forecast-hour", help: "Stop downloading once the lead time exceeds this hour")
+        var maxForecastHour: Int?
     }
 
     var help: String {
@@ -187,7 +274,7 @@ struct DownloadIconCommand: AsyncCommand {
     }
 
     /// Download native ICON v1 fields and adapt them to the selected outputs.
-    func downloadIcon(application: Application, outputs: IconDownloadDomains, remapper: IconRemapper?, run: Timestamp, variables: [any IconVariableDownloadable], concurrent: Int, uploadS3Bucket: String?, realm: String?) async throws -> (handles: [GenericVariableHandle], handles15minIconD2: [GenericVariableHandle]) {
+    func downloadIcon(application: Application, outputs: IconDownloadDomains, remapper: IconRemapper?, run: Timestamp, variables: [any IconVariableDownloadable], concurrent: Int, uploadS3Bucket: String?, realm: String?, siblingRealm: String?, maxForecastHour: Int?) async throws -> (handles: [GenericVariableHandle], handles15minIconD2: [GenericVariableHandle]) {
         let logger = application.logger
         let client = application.http.client.shared
         let domain = outputs.source
@@ -217,7 +304,17 @@ struct DownloadIconCommand: AsyncCommand {
         let jobs = variables.flatMap { variable in
             (0..<domain.countEnsembleMember).map { (variable: variable, member: $0) }
         }
-        let timestamps = domain.getDownloadForecastSteps(run: run.hour).map { run.add(hours: $0) }
+        let timestamps = domain.getDownloadForecastSteps(run: run.hour).map { run.add(hours: $0) }.filter { timestamp in
+            guard let maxForecastHour else { return true }
+            let leadHours = (timestamp.timeIntervalSince1970 - run.timeIntervalSince1970) / 3600
+            return leadHours <= maxForecastHour
+        }
+        let modelElevation: [Float]?
+        if variables.contains(where: { ($0 as? IconSurfaceVariable) == .model_elevation }) {
+            modelElevation = try await OmFileReader(file: outputs.primary.modelElevationRawFileOm.getFilePath()).expectArray(of: Float.self).read()
+        } else {
+            modelElevation = nil
+        }
         let handles = try await timestamps.enumerated().asyncMap { (i,timestamp) in
             let hour = (timestamp.timeIntervalSince1970 - run.timeIntervalSince1970) / 3600
             logger.info("Downloading hour \(hour)")
@@ -227,7 +324,7 @@ struct DownloadIconCommand: AsyncCommand {
             
             let writer = OmSpatialTimestepWriter(domain: outputs.primary, run: run, time: timestamp, storeOnDisk: !isEnsemble, realm: realm, logger: logger, ensembleMeanDomain: outputs.ensembleMean)
             let modelLevelWriter = outputs.modelLevel.map {
-                OmSpatialTimestepWriter(domain: $0, run: run, time: timestamp, storeOnDisk: true, realm: nil, logger: logger)
+                OmSpatialTimestepWriter(domain: $0, run: run, time: timestamp, storeOnDisk: true, realm: siblingRealm, logger: logger)
             }
             let remappedWriter = remappedDomain.map {
                 OmSpatialTimestepWriter(domain: $0, run: run, time: timestamp, storeOnDisk: true, realm: realm, logger: logger)
@@ -238,17 +335,17 @@ struct DownloadIconCommand: AsyncCommand {
             }
 
             @Sendable func write(member: Int, variable: any GenericVariable, data: [Float]) async throws {
-                if let modelLevelWriter,
-                   IconModelLevelVariable(rawValue: variable.omFileName.file) != nil {
-                    try await modelLevelWriter.write(member: member, variable: variable, data: data)
-                } else {
-                    try await writer.write(member: member, variable: variable, data: data)
+                let diverted = modelLevelWriter != nil && IconModelLevelVariable(rawValue: variable.omFileName.file) != nil
+                if diverted, let modelLevelWriter {
+                    try await modelLevelWriter.write(member: member, variable: variable, data: data, compressionType: variable.omFileCompression)
+                    return
                 }
+                try await writer.write(member: member, variable: variable, data: data, compressionType: variable.omFileCompression)
                 if let remappedWriter {
                     guard let remapper else {
                         preconditionFailure("Remapped ICON writer requires a grid mapping")
                     }
-                    try await remappedWriter.write(member: member, variable: variable, data: remapper.remap(data))
+                    try await remappedWriter.write(member: member, variable: variable, data: remapper.remap(data), compressionType: variable.omFileCompression)
                 }
             }
 
@@ -492,6 +589,10 @@ struct DownloadIconCommand: AsyncCommand {
                 try await writer15Min.write(time: v.timestamp, member: v.member, variable: v.variable, data: data.data)
             }
 
+            if let modelElevation {
+                try await writer.write(member: 0, variable: IconSurfaceVariable.model_elevation, data: modelElevation, compressionType: IconSurfaceVariable.model_elevation.omFileCompression)
+            }
+
             let completed = i == timestamps.count - 1
             let validTimes = Array(timestamps[0...i])
             let handles = try await writer.finalise(application: application, completed: completed, validTimes: validTimes, uploadS3Bucket: uploadS3Bucket)
@@ -553,51 +654,7 @@ struct DownloadIconCommand: AsyncCommand {
         /// - surface variables with soil
         /// - model-level e.g. for 180m wind, they have a much larger dalay and sometimes are aborted
         /// - pressure level which take forever to download because it is too much data
-        var groupVariables: [any IconVariableDownloadable]
-        switch group {
-        case .all:
-            groupVariables = IconSurfaceVariable.allCases.filter {
-                $0 != .model_elevation && $0 != .surface_pressure_model
-            } + domain.levels.reversed().flatMap { level in
-                IconPressureVariableType.allCases.map { variable in
-                    IconPressureVariable(variable: variable, level: level)
-                }
-            }
-        case .surface:
-            groupVariables = IconSurfaceVariable.allCases.filter {
-                $0 != .model_elevation && $0 != .surface_pressure_model && !($0.getVarAndLevel(domain: domain)?.cat == "model-level")
-            }
-        case .surfaceAndPressure:
-            groupVariables = IconSurfaceVariable.allCases.filter {
-                $0 != .model_elevation && $0 != .surface_pressure_model && !($0.getVarAndLevel(domain: domain)?.cat == "model-level")
-            } + domain.levels.reversed().flatMap { level in
-                IconPressureVariableType.allCases.map { variable in
-                    IconPressureVariable(variable: variable, level: level)
-                }
-            }
-        case .modelLevel:
-            groupVariables = IconSurfaceVariable.allCases.filter {
-                $0.getVarAndLevel(domain: domain)?.cat == "model-level"
-            }
-        case .pressureLevel:
-            groupVariables = domain.levels.reversed().flatMap { level in
-                IconPressureVariableType.allCases.map { variable in
-                    IconPressureVariable(variable: variable, level: level)
-                }
-            }
-        case .pressureLevelGt500:
-            groupVariables = domain.levels.reversed().flatMap { level in
-                return level > 500 ? IconPressureVariableType.allCases.map { variable in
-                    IconPressureVariable(variable: variable, level: level)
-                } : []
-            }
-        case .pressureLevelLtE500:
-            groupVariables = domain.levels.reversed().flatMap { level in
-                return level <= 500 ? IconPressureVariableType.allCases.map { variable in
-                    IconPressureVariable(variable: variable, level: level)
-                } : []
-            }
-        }
+        let groupVariables = group.variables(domain: domain)
 
         let variables = onlyVariables ?? groupVariables
 
@@ -624,13 +681,13 @@ struct DownloadIconCommand: AsyncCommand {
         try await convertSurfaceElevation(application: context.application, outputs: outputs, remapper: remapper, run: run, uploadS3Bucket: signature.uploadS3Bucket)
         try await convertHhlHeights(application: context.application, outputs: outputs, run: run, uploadS3Bucket: signature.uploadS3Bucket)
 
-        let (handles, handles15minIconD2) = try await downloadIcon(application: context.application, outputs: outputs, remapper: remapper, run: run, variables: variables, concurrent: nConcurrent, uploadS3Bucket: signature.uploadS3Bucket, realm: group.realm)
+        let (handles, handles15minIconD2) = try await downloadIcon(application: context.application, outputs: outputs, remapper: remapper, run: run, variables: variables, concurrent: nConcurrent, uploadS3Bucket: signature.uploadS3Bucket, realm: group.realm, siblingRealm: group.siblingRealm, maxForecastHour: signature.maxForecastHour)
 
         if let fifteenMinuteDomain = outputs.fifteenMinute {
             // ICON-D2 downloads 15min data as well
-            try await GenericVariableHandle.convert(application: context.application, domain: fifteenMinuteDomain, createNetcdf: signature.createNetcdf, run: run, handles: handles15minIconD2, concurrent: nConcurrent, writeUpdateJson: true, uploadS3Bucket: signature.uploadS3Bucket, uploadS3OnlyProbabilities: signature.uploadS3OnlyProbabilities, generateFullRun: generateFullRun, generateTimeSeries: !signature.skipTimeseries)
+            try await GenericVariableHandle.convert(application: context.application, domain: fifteenMinuteDomain, createNetcdf: signature.createNetcdf, run: run, handles: handles15minIconD2, concurrent: nConcurrent, writeUpdateJson: true, uploadS3Bucket: signature.uploadS3Bucket, uploadS3OnlyProbabilities: signature.uploadS3OnlyProbabilities, generateFullRun: generateFullRun, generateTimeSeries: !signature.skipTimeseries, forceUpdateMeta: signature.updateMeta)
         }
-        try await GenericVariableHandle.convert(application: context.application, domain: outputs.primary, createNetcdf: signature.createNetcdf, run: run, handles: handles, concurrent: nConcurrent, writeUpdateJson: true, uploadS3Bucket: signature.uploadS3Bucket, uploadS3OnlyProbabilities: signature.uploadS3OnlyProbabilities, generateFullRun: generateFullRun, generateTimeSeries: !signature.skipTimeseries)
+        try await GenericVariableHandle.convert(application: context.application, domain: outputs.primary, createNetcdf: signature.createNetcdf, run: run, handles: handles, concurrent: nConcurrent, writeUpdateJson: true, uploadS3Bucket: signature.uploadS3Bucket, uploadS3OnlyProbabilities: signature.uploadS3OnlyProbabilities, generateFullRun: generateFullRun, generateTimeSeries: !signature.skipTimeseries, forceUpdateMeta: signature.updateMeta)
 
         logger.info("Finished in \(start.timeElapsedPretty())")
     }
