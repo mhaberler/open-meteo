@@ -117,7 +117,7 @@ struct IconModelLevelVariable: GenericVariable, IconVariableDownloadable, Hashab
             case .specific_humidity: return 10000
             case .cloud_water, .cloud_ice: return 30000
             case .relative_humidity, .cloud_cover: return 1
-            case .pressure: return 10
+            case .pressure: return 10000 // log10(1 + hPa); 1050 hPa stays below int16
             case .wind_speed, .wind_direction, .dew_point: return 10
             }
         }
@@ -126,6 +126,9 @@ struct IconModelLevelVariable: GenericVariable, IconVariableDownloadable, Hashab
     var omFileCompression: OmCompressionType {
         switch kind {
         case .level(let variable, _) where variable == .specific_humidity || variable == .cloud_water || variable == .cloud_ice:
+            return .pfor_delta2d_int16_logarithmic
+        case .level(.pressure, _):
+            // Global tops are near 0.02 hPa. Linear 0.1 hPa steps store the upper levels as 0.
             return .pfor_delta2d_int16_logarithmic
         default:
             return .pfor_delta2d_int16
