@@ -1,8 +1,15 @@
 import Foundation
+import Synchronization
 import Vapor
 
-final class HhlColumnCache: @unchecked Sendable {
-    var column: [Float]?
+/// Shared by copies of one reader so the HHL column is read once per request.
+final class HhlColumnCache: Sendable {
+    private let storage = Mutex<[Float]?>(nil)
+
+    var column: [Float]? {
+        get { storage.withLock { $0 } }
+        set { storage.withLock { $0 = newValue } }
+    }
 }
 
 /// Height math on one HHL column (ASL, index 0 = model top, last = surface).
