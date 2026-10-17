@@ -110,19 +110,26 @@ struct DownloadIconCommand: AsyncCommand {
 
     /**
      Convert surface elevation. Out of grid positions are NaN. Sea grid points are -999.
+     Lake cells stay at HSURF: FR_LAND is near 0 there, so FR_LAKE is added before the sea test.
+     An existing elevation file is left untouched; delete it to regenerate the mask.
+     Unmasked HSURF is written separately as HSURF_raw.
      */
     func convertSurfaceElevation(application: Application, outputs: IconDownloadOutputs, remapper: IconRemapper?, run: Timestamp, uploadS3Bucket: String?) async throws {
         let logger = application.logger
         let feedStatic = outputs.nativeDomain.staticResourceDomain.downloadDomain
         let needsPrimary = !FileManager.default.fileExists(atPath: outputs.primary.surfaceElevationFileOm.getFilePath())
+        let needsRaw = !FileManager.default.fileExists(atPath: outputs.primary.modelElevationRawFileOm.getFilePath())
         let missingRemapped = outputs.remapped.flatMap { domain in
             FileManager.default.fileExists(atPath: domain.surfaceElevationFileOm.getFilePath()) ? nil : domain
         }
-        guard needsPrimary || missingRemapped != nil else {
+        guard needsPrimary || needsRaw || missingRemapped != nil else {
             return
         }
         if needsPrimary {
             try outputs.primary.surfaceElevationFileOm.createDirectory()
+        }
+        if needsRaw {
+            try outputs.primary.modelElevationRawFileOm.createDirectory()
         }
         try missingRemapped?.surfaceElevationFileOm.createDirectory()
 
@@ -133,14 +140,30 @@ struct DownloadIconCommand: AsyncCommand {
         let curl = Curl(logger: logger, client: application.dedicatedHttpClient, deadLineHours: deadLineHours)
         let downloader = IconGribDownloader(domain: feedStatic, curl: curl, gridIdentity: outputs.nativeDomain.nativeGridFile.identity)
         let surface = try await downloader.download(field: ("HSURF", "single-level", nil), run: run, leadSeconds: 0)
-        var hsurf = surface.data.data
+        let rawHsurf = surface.data.data
+        if needsRaw {
+            try await rawHsurf.writeStaticOmFile(file: outputs.primary.modelElevationRawFileOm, grid: outputs.primary.grid, application: application, uploadS3Bucket: uploadS3Bucket)
+        }
+        guard needsPrimary || missingRemapped != nil else {
+            return
+        }
+
+        var hsurf = rawHsurf
         let land = try await downloader.download(field: ("FR_LAND", "single-level", nil), run: run, leadSeconds: 0)
         let landFraction = land.data.data
+        let domainsWithLakeFraction: Set<IconDownloadDomains> = [.icon, .iconEu, .iconD2, .iconD2Eps]
+        let lakeFraction: [Float]
+        if domainsWithLakeFraction.contains(feedStatic) {
+            let lake = try await downloader.download(field: ("FR_LAKE", "single-level", nil), run: run, leadSeconds: 0)
+            lakeFraction = lake.data.data
+        } else {
+            lakeFraction = [Float](repeating: 0, count: landFraction.count)
+        }
 
-        // Set all sea grid points to -999
-        precondition(hsurf.count == landFraction.count)
+        // Open sea is masked. A lake cell has low FR_LAND but a real HSURF, so it stays.
+        precondition(hsurf.count == landFraction.count && hsurf.count == lakeFraction.count)
         for i in hsurf.indices {
-            if landFraction[i] < 0.5 {
+            if landFraction[i] + lakeFraction[i] < 0.5 {
                 hsurf[i] = -999
             }
         }
