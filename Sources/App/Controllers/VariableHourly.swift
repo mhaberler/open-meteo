@@ -146,6 +146,10 @@ enum ForecastSurfaceVariable: String, GenericVariableMixable {
     case air_density_2m
     case snowfall_height
     case surface_pressure
+    /// Raw ICON surface pressure at the model orography. Not reduced to `elevation=`.
+    case surface_pressure_model
+    /// Unmasked ICON orography as a time series.
+    case model_elevation
     case surface_temperature
     case temperature_100m
     case temperature_120m
@@ -521,11 +525,62 @@ enum ForecastHeightVariableType: String, GenericVariableMixable {
     case cloudcover
     case cloud_cover
     case vertical_velocity
+    case height
+    case height_agl
+    case height_half
+    case height_half_agl
+    case wind_w
+    case specific_humidity
+    case pressure
+    case cloud_water
+    case cloud_ice
 }
 
 struct ForecastHeightVariable: HeightVariableRespresentable, GenericVariableMixable {
     let variable: ForecastHeightVariableType
     let level: Int
+    /// ICON native columns use `<name>_levelN`. Fixed heights above ground use `<name>_<metres>m`.
+    let modelLevel: Bool
+
+    init(variable: ForecastHeightVariableType, level: Int) {
+        self.variable = variable
+        self.level = level
+        self.modelLevel = false
+    }
+
+    init?(rawValue: String) {
+        if let range = rawValue.range(of: "_level", options: .backwards) {
+            let name = String(rawValue[..<range.lowerBound])
+            guard let variable = ForecastHeightVariableType(rawValue: name),
+                  let level = Int(rawValue[range.upperBound...]),
+                  Self.valid(level: level) else {
+                return nil
+            }
+            self.variable = variable
+            self.level = level
+            self.modelLevel = true
+            return
+        }
+        guard let pos = rawValue.lastIndex(of: "_"),
+              let posEnd = rawValue[pos...].range(of: "m") else {
+            return nil
+        }
+        let variableString = String(rawValue[..<pos])
+        guard let variable = ForecastHeightVariableType(rawValue: variableString) else {
+            return nil
+        }
+        let start = rawValue.index(after: pos)
+        guard let level = Int(rawValue[start..<posEnd.lowerBound]), Self.valid(level: level) else {
+            return nil
+        }
+        self.variable = variable
+        self.level = level
+        self.modelLevel = false
+    }
+
+    var rawValue: String {
+        modelLevel ? "\(variable.rawValue)_level\(level)" : "\(variable.rawValue)_\(level)m"
+    }
 }
 
 typealias ForecastVariable = SurfacePressureAndHeightVariable<VariableAndPreviousDay, VariableOrSpread<ForecastPressureVariable>, ForecastHeightVariable>

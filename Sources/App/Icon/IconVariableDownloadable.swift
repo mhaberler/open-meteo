@@ -8,7 +8,7 @@ extension IconSurfaceVariable: IconVariableDownloadable {
         switch self {
         case .temperature_2m, .temperature_80m, .temperature_120m, .temperature_180m, .soil_temperature_0cm, .soil_temperature_6cm, .soil_temperature_18cm, .soil_temperature_54cm:
             return (1, -273.15) // Temperature is stored in kelvin. Convert to celsius
-        case .pressure_msl:
+        case .pressure_msl, .surface_pressure_model:
             return (1 / 100, 0) // convert to hPa
         case .soil_moisture_0_to_1cm:
             return (0.001 / 0.01, 0) // 1cm depth

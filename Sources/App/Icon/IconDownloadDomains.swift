@@ -219,6 +219,16 @@ enum IconDownloadDomains: String, CaseIterable, Sendable {
         numberOfModelFullLevels + 1
     }
 
+    /// Global ICON does not publish `clc` below this DWD full-level index. Other domains publish every level.
+    var cloudCoverMinimumModelLevel: Int {
+        switch self {
+        case .icon, .iconEps:
+            return 39
+        default:
+            return 1
+        }
+    }
+
     /// Vmax and precip always are empty in the first hour. Weather codes differ a lot in hour 0.
     func skipHour(_ variable: any IconVariableDownloadable, hour: Int, forDownload: Bool, run: Timestamp) -> Bool {
         if self == .aicon { return hour == 0 }
@@ -388,6 +398,12 @@ enum IconDownloadDomains: String, CaseIterable, Sendable {
             return (self == .iconD2 || self == .iconD2Ruc) ? ("w_ctmax", "single-level", nil) : nil // only in icon d2
         case .visibility:
             return nil // VIS is not published in the v1 feed. Keep the identifier for historical data.
+        case .cloud_base:
+            return self == .icon ? nil : ("ceiling", "single-level", nil)
+        case .surface_pressure_model:
+            return ("ps", "single-level", nil)
+        case .model_elevation:
+            return nil
         }
     }
 

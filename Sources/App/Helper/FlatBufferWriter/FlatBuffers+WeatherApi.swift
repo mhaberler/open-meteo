@@ -715,6 +715,9 @@ extension VariableAndPreviousDay: FlatBuffersVariable {
             return .init(variable: .totalColumnWater, previousDay: previousDay)
         case .air_density_2m:
             return .init(variable: .airDensity, altitude: 2)
+        case .surface_pressure_model, .model_elevation:
+            // The SDK has no distinct member. JSON and CSV carry the real names.
+            return .init(variable: .undefined, previousDay: previousDay)
         }
     }
 }
@@ -768,6 +771,8 @@ extension ForecastHeightVariable: FlatBuffersVariable {
             return .init(variable: .windUComponent, altitude: Int16(level))
         case .wind_v_component:
             return .init(variable: .windVComponent, altitude: Int16(level))
+        case .height, .height_agl, .height_half, .height_half_agl, .wind_w, .specific_humidity, .pressure, .cloud_water, .cloud_ice:
+            return .init(variable: .undefined)
         }
     }
 }

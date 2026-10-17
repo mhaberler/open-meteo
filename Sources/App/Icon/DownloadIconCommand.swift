@@ -87,7 +87,9 @@ struct DownloadIconCommand: AsyncCommand {
                 return try IconSurfaceVariable.load(rawValue: String(name))
             }
         }
-        let surface: [any IconVariableDownloadable] = IconSurfaceVariable.allCases.filter { feed.getVarAndLevel($0)?.cat != "model-level" }
+        let surface: [any IconVariableDownloadable] = IconSurfaceVariable.allCases.filter {
+            $0 != .model_elevation && $0 != .surface_pressure_model && feed.getVarAndLevel($0)?.cat != "model-level"
+        }
         let modelLevel: [any IconVariableDownloadable] = IconSurfaceVariable.allCases.filter { feed.getVarAndLevel($0)?.cat == "model-level" }
         let pressure: [any IconVariableDownloadable] = feed.levels.reversed().filter { level in
             switch group {

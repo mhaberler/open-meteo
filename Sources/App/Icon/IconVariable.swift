@@ -194,6 +194,15 @@ enum IconSurfaceVariable: String, CaseIterable, GenericVariableMixable, Sendable
 
     case visibility
 
+    /// Metres above MSL. Not published for global ICON.
+    case cloud_base
+
+    /// Raw model surface pressure at HSURF. Does not follow `elevation=`.
+    case surface_pressure_model
+
+    /// Unmasked model orography. Sea stays near 0 m, unlike the static elevation field.
+    case model_elevation
+
     var storePreviousForecast: Bool {
         switch self {
         case .temperature_2m, .relative_humidity_2m: return true
@@ -264,6 +273,9 @@ enum IconSurfaceVariable: String, CaseIterable, GenericVariableMixable, Sendable
         case .updraft:
             return 100
         case .visibility: return 0.05 // 50 meter
+        case .cloud_base: return 0.1
+        case .surface_pressure_model: return 10
+        case .model_elevation: return 1
         }
     }
 
@@ -327,6 +339,10 @@ enum IconSurfaceVariable: String, CaseIterable, GenericVariableMixable, Sendable
             return .metrePerSecondNotUnitConverted
         case .visibility:
             return .metre
+        case .cloud_base, .model_elevation:
+            return .metre
+        case .surface_pressure_model:
+            return .hectopascal
         }
     }
 
@@ -431,6 +447,12 @@ enum IconSurfaceVariable: String, CaseIterable, GenericVariableMixable, Sendable
         case .direct_radiation:
             return .solar_backwards_averaged
         case .visibility:
+            return .linear
+        case .cloud_base:
+            return .hermite(bounds: 0...10e9)
+        case .surface_pressure_model:
+            return .hermite(bounds: nil)
+        case .model_elevation:
             return .linear
         }
     }
