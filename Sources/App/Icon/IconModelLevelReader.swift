@@ -5,6 +5,31 @@ final class HhlColumnCache: @unchecked Sendable {
     var column: [Float]?
 }
 
+/// Height math on one HHL column (ASL, index 0 = model top, last = surface).
+/// The last half level is HSURF, so AGL does not depend on the sea-masked elevation.
+enum IconHhlColumn {
+    /// Full level `n` lies between half levels `n` and `n+1`.
+    static func fullLevelASL(_ heights: [Float], fullLevel: Int) -> Float? {
+        guard fullLevel >= 1, fullLevel < heights.count else { return nil }
+        let lower = heights[fullLevel - 1]
+        let upper = heights[fullLevel]
+        guard lower.isFinite, upper.isFinite else { return .nan }
+        return (lower + upper) / 2
+    }
+
+    static func halfLevelASL(_ heights: [Float], halfLevel: Int) -> Float? {
+        guard halfLevel >= 1, halfLevel <= heights.count else { return nil }
+        let height = heights[halfLevel - 1]
+        return height.isFinite ? height : .nan
+    }
+
+    static func aboveGround(_ asl: Float?, heights: [Float]) -> Float? {
+        guard let asl else { return nil }
+        guard let surface = heights.last, surface.isFinite else { return .nan }
+        return asl - surface
+    }
+}
+
 extension IconNativeDomain {
     func makeModelLevelDerived(lat: Float, lon: Float, elevation: Float, mode: GridSelectionMode, options: GenericReaderOptions) async throws -> VariableHourlyDeriver<IconModelLevelReader>? {
         guard let raw = try await GenericReader<IconNativeDomain, IconModelLevelVariable>(domain: self, lat: lat, lon: lon, elevation: elevation, mode: mode, options: options) else {
@@ -147,36 +172,20 @@ struct IconModelLevelReader: GenericReaderProtocol {
     }
 
     func fullLevelHeightASL(fullLevel: Int) async throws -> Float? {
-        let heights = try await hhlColumnASL()
-        guard fullLevel >= 1, fullLevel < heights.count else { return nil }
-        let lower = heights[fullLevel - 1]
-        let upper = heights[fullLevel]
-        guard lower.isFinite, upper.isFinite else { return .nan }
-        return (lower + upper) / 2
+        IconHhlColumn.fullLevelASL(try await hhlColumnASL(), fullLevel: fullLevel)
     }
 
     func fullLevelHeightAGL(fullLevel: Int) async throws -> Float? {
-        guard let asl = try await fullLevelHeightASL(fullLevel: fullLevel) else { return nil }
-        let surface = reader.modelElevation.numeric
-        if surface.isFinite && surface > -999 {
-            return asl - surface
-        }
-        return asl
+        let heights = try await hhlColumnASL()
+        return IconHhlColumn.aboveGround(IconHhlColumn.fullLevelASL(heights, fullLevel: fullLevel), heights: heights)
     }
 
     func halfLevelHeightASL(halfLevel: Int) async throws -> Float? {
-        let heights = try await hhlColumnASL()
-        guard halfLevel >= 1, halfLevel <= heights.count else { return nil }
-        let height = heights[halfLevel - 1]
-        return height.isFinite ? height : .nan
+        IconHhlColumn.halfLevelASL(try await hhlColumnASL(), halfLevel: halfLevel)
     }
 
     func halfLevelHeightAGL(halfLevel: Int) async throws -> Float? {
-        guard let asl = try await halfLevelHeightASL(halfLevel: halfLevel) else { return nil }
-        let surface = reader.modelElevation.numeric
-        if surface.isFinite && surface > -999 {
-            return asl - surface
-        }
-        return asl
+        let heights = try await hhlColumnASL()
+        return IconHhlColumn.aboveGround(IconHhlColumn.halfLevelASL(heights, halfLevel: halfLevel), heights: heights)
     }
 }
