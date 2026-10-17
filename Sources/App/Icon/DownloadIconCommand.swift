@@ -99,6 +99,9 @@ struct DownloadIconCommand: AsyncCommand {
                 return "model-level"
             case .pressureLevel:
                 return "pressure-level"
+            case .heidiVars:
+                // The parent `surface` job writes the unsuffixed spatial files for the same run.
+                return "heidi"
             default:
                 return nil
             }
