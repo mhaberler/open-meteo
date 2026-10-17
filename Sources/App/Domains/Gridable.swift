@@ -146,8 +146,7 @@ extension Gridable {
     /// Read one vertical column from a 3D static file [ny, nx, nlev] (level last).
     func readColumnFromStaticFile(gridpoint: Int, file: any OmFileReaderArrayProtocol<Float>) async throws -> [Float] {
         guard file.getDimensionsCount() == 3 else {
-            let value = try await readFromStaticFile(gridpoint: gridpoint, file: file)
-            return value.isNaN ? [] : [value]
+            throw StaticColumnFileError.notThreeDimensional(dimensions: Int(file.getDimensionsCount()))
         }
         let dims: InlineArray<3, UInt64> = file.getDimensionsInline()
         let nlev = Int(dims[2])
@@ -313,4 +312,8 @@ enum GridSelectionMode: String, Codable {
 public struct BoundingBoxWGS84: Sendable {
     let latitude: Range<Float>
     let longitude: Range<Float>
+}
+
+enum StaticColumnFileError: Error {
+    case notThreeDimensional(dimensions: Int)
 }
