@@ -84,6 +84,8 @@ extension TimerangeDt {
 enum ReaderStaticVariable {
     case soilType
     case elevation
+    /// Half-level heights ASL. The file is 3D; scalar `getStatic` is not meaningful for it.
+    case hhl
 }
 
 /**
@@ -230,6 +232,9 @@ struct GenericReader<Domain: GenericDomain, Variable: GenericVariable>: GenericR
     }
 
     func getStatic(type: ReaderStaticVariable) async throws -> Float? {
+        if type == .hhl {
+            return try await getStatic(type: .elevation)
+        }
         guard let file = await domain.getStaticFile(type: type, httpClient: httpClient, logger: logger) else {
             return nil
         }

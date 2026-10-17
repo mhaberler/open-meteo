@@ -241,6 +241,11 @@ enum IconDomains: String, CaseIterable, GenericDomain {
         }
     }
 
+    /// Half levels are one step above the full levels (1 = model top, N+1 = surface).
+    var numberOfModelHalfLevels: Int {
+        numberOfModelFullLevels + 1
+    }
+
     /// ICON uses 1.5°C melting point temperature: https://gitlab.dkrz.de/icon/icon-model/-/blob/release-2024.01-public/src/atm_phy_nwp/mo_nh_interface_nwp.f90?ref_type=heads#L2232
     static let tMelt = Float(1.5)
 }
