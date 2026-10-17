@@ -261,7 +261,12 @@ struct DownloadIconCommand: AsyncCommand {
 
     /// Half-level heights ASL as one 3D static file on the parent grid, level last.
     /// Idempotent: an existing `hhl.om` is left in place.
-    func convertHhlHeights(application: Application, outputs: IconDownloadOutputs, run: Timestamp, uploadS3Bucket: String?) async throws {
+    /// Only `--group hiresTemp` on a domain with a model-level sibling writes it. EPS feeds publish
+    /// HHL for the lowest levels only, and a surface job must not depend on this download.
+    func convertHhlHeights(application: Application, outputs: IconDownloadOutputs, group: VariableGroup, run: Timestamp, uploadS3Bucket: String?) async throws {
+        guard group == .hiresTemp, outputs.modelLevel != nil else {
+            return
+        }
         let logger = application.logger
         let feed = outputs.downloadDomain
         guard feed.numberOfModelFullLevels > 0 else {
@@ -744,7 +749,7 @@ struct DownloadIconCommand: AsyncCommand {
             remapper = nil
         }
         try await convertSurfaceElevation(application: context.application, outputs: outputs, remapper: remapper, run: run, uploadS3Bucket: signature.uploadS3Bucket)
-        try await convertHhlHeights(application: context.application, outputs: outputs, run: run, uploadS3Bucket: signature.uploadS3Bucket)
+        try await convertHhlHeights(application: context.application, outputs: outputs, group: group, run: run, uploadS3Bucket: signature.uploadS3Bucket)
 
         let (handles, handles15minIconD2) = try await downloadIcon(application: context.application, outputs: outputs, remapper: remapper, run: run, variables: variables, concurrent: nConcurrent, uploadS3Bucket: signature.uploadS3Bucket, realm: group.realm, siblingRealm: group.siblingRealm, maxForecastHour: signature.maxForecastHour)
 
