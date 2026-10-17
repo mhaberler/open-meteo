@@ -143,6 +143,21 @@ extension Gridable {
         return .elevation(elevation)
     }
 
+    /// Read one vertical column from a 3D static file [ny, nx, nlev] (level last).
+    func readColumnFromStaticFile(gridpoint: Int, file: any OmFileReaderArrayProtocol<Float>) async throws -> [Float] {
+        guard file.getDimensionsCount() == 3 else {
+            let value = try await readFromStaticFile(gridpoint: gridpoint, file: file)
+            return value.isNaN ? [] : [value]
+        }
+        let dims: InlineArray<3, UInt64> = file.getDimensionsInline()
+        let nlev = Int(dims[2])
+        let x = UInt64(gridpoint % nx)
+        let y = UInt64(gridpoint / nx)
+        var column = [Float](repeating: .nan, count: nlev)
+        try await file.read(into: &column, range: [y..<y + 1, x..<x + 1, 0..<UInt64(nlev)], intoCubeOffset: [0, 0, 0], intoCubeDimension: [1, 1, UInt64(nlev)])
+        return column
+    }
+
     /// Read static information e.g. elevation or soil type
     func readFromStaticFile(gridpoint: Int, file: any OmFileReaderArrayProtocol<Float>) async throws -> Float {
         let x = UInt64(gridpoint % nx)

@@ -161,6 +161,52 @@ struct DownloadIconCommand: AsyncCommand {
         }
     }
 
+    /// Half-level heights ASL as one 3D static file on the parent grid, level last.
+    /// Idempotent: an existing `hhl.om` is left in place.
+    func convertHhlHeights(application: Application, outputs: IconDownloadOutputs, run: Timestamp, uploadS3Bucket: String?) async throws {
+        let logger = application.logger
+        let feed = outputs.downloadDomain
+        guard feed.numberOfModelFullLevels > 0 else {
+            return
+        }
+        let hhlFile = outputs.primary.hhlFileOm
+        if FileManager.default.fileExists(atPath: hhlFile.getFilePath()) {
+            return
+        }
+        let nHalf = feed.numberOfModelHalfLevels
+        logger.info("Converting HHL for \(feed) (\(nHalf) half levels)")
+        try hhlFile.createDirectory()
+
+        let curl = Curl(logger: logger, client: application.dedicatedHttpClient, deadLineHours: feed.deadlineHours)
+        let downloader = IconGribDownloader(domain: feed, curl: curl, gridIdentity: outputs.nativeDomain.nativeGridFile.identity)
+        var levels: [[Float]] = []
+        levels.reserveCapacity(nHalf)
+        for level in 1...nHalf {
+            let field = try await downloader.download(field: ("HHL", "model-level", level), run: run, leadSeconds: 0)
+            levels.append(field.data.data)
+        }
+
+        let ny = outputs.primary.grid.ny
+        let nx = outputs.primary.grid.nx
+        let nlev = nHalf
+        var stacked = [Float](repeating: .nan, count: ny * nx * nlev)
+        for (levelIndex, levelData) in levels.enumerated() {
+            precondition(levelData.count == ny * nx, "HHL level \(levelIndex + 1) count \(levelData.count) != \(ny * nx)")
+            for (spatialIndex, value) in levelData.enumerated() {
+                stacked[spatialIndex * nlev + levelIndex] = value
+            }
+        }
+        let chunkY = min(ny, 32)
+        let chunkX = min(nx, max(1, 1024 / chunkY))
+        let path = hhlFile.getFilePath()
+        try stacked.writeOmFile(file: path, dimensions: [ny, nx, nlev], chunks: [chunkY, chunkX, nlev], compression: .pfor_delta2d, scalefactor: 1)
+        for queue in await application.s3SyncManager.getQueues(bucketsOpt: uploadS3Bucket) ?? [] {
+            let uploads = queue.startMultiPartUploads()
+            await uploads.uploadMultipart(file: path, objectName: hhlFile.getRelativeFilePathWithData(), lastModified: .now())
+            await queue.finishMultiPartUploads(uploads)
+        }
+    }
+
     /// Download native DWD v1 fields and adapt them to the selected storage outputs.
     func downloadIcon(application: Application, outputs: IconDownloadOutputs, remapper: IconRemapper?, run: Timestamp, variables: [any IconVariableDownloadable], concurrent: Int, uploadS3Bucket: String?, realm: String?) async throws -> (handles: [GenericVariableHandle], handles15minIconD2: [GenericVariableHandle]) {
         let logger = application.logger
@@ -586,6 +632,7 @@ struct DownloadIconCommand: AsyncCommand {
             remapper = nil
         }
         try await convertSurfaceElevation(application: context.application, outputs: outputs, remapper: remapper, run: run, uploadS3Bucket: signature.uploadS3Bucket)
+        try await convertHhlHeights(application: context.application, outputs: outputs, run: run, uploadS3Bucket: signature.uploadS3Bucket)
 
         let (handles, handles15minIconD2) = try await downloadIcon(application: context.application, outputs: outputs, remapper: remapper, run: run, variables: variables, concurrent: nConcurrent, uploadS3Bucket: signature.uploadS3Bucket, realm: group.realm)
 

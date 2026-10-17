@@ -214,6 +214,11 @@ enum IconDownloadDomains: String, CaseIterable, Sendable {
         }
     }
 
+    /// Half levels are one step above the full levels (1 = model top, N+1 = surface).
+    var numberOfModelHalfLevels: Int {
+        numberOfModelFullLevels + 1
+    }
+
     /// Vmax and precip always are empty in the first hour. Weather codes differ a lot in hour 0.
     func skipHour(_ variable: any IconVariableDownloadable, hour: Int, forDownload: Bool, run: Timestamp) -> Bool {
         if self == .aicon { return hour == 0 }

@@ -82,6 +82,10 @@ extension GenericDomain {
             return try? await OmFileSystemManager.instance.get(
                 file: OmFileType.staticFile(domain: domainRegistryStatic, variable: "HSURF", chunk: nil)
             )?.reader
+        case .hhl:
+            return try? await OmFileSystemManager.instance.get(
+                file: OmFileType.staticFile(domain: domainRegistryStatic, variable: "hhl", chunk: nil)
+            )?.reader
         }
     }
 
@@ -105,6 +109,11 @@ extension GenericDomain {
 
     var soilTypeFileOm: OmFileType {
         .staticFile(domain: domainRegistryStatic ?? domainRegistry, variable: "soil_type", chunk: nil)
+    }
+
+    /// HHL half-level heights (ASL) as a single 3D static file [ny, nx, nHalf], level last.
+    var hhlFileOm: OmFileType {
+        .staticFile(domain: domainRegistryStatic ?? domainRegistry, variable: "hhl", chunk: nil)
     }
 }
 
