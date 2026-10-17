@@ -18,16 +18,15 @@ This document lists all required cronjobs to download data. However, downloading
 #44 0,3,6,9,12,15,18,21 * * * /usr/local/bin/openmeteo-api download icon-d2 --group modelLevel > ~/log/icon-d2_model-level.log 2>&1 || cat ~/log/icon-d2_model-level.log
 
 # Native grids. Target the parent domain. modelLevel writes the sibling latest.json (80/120/180 m).
-# hiresTemp writes the sibling latest_hires-temp.json. Map layers have to read both files.
-# heidiVars stays on the parent.
-# Do not point these at dwd_icon_*_native_model_level; that domain only accepts --group modelLevel.
-#44 0,3,6,9,12,15,18,21 * * * /usr/local/bin/openmeteo-api download icon-d2-native --group modelLevel > ~/log/icon-d2-native_model-level.log 2>&1 || cat ~/log/icon-d2-native_model-level.log
-#44 0,3,6,9,12,15,18,21 * * * /usr/local/bin/openmeteo-api download icon-d2-native --group hiresTemp --update-meta > ~/log/icon-d2-native_hires-temp.log 2>&1 || cat ~/log/icon-d2-native_hires-temp.log
-#44 0,3,6,9,12,15,18,21 * * * /usr/local/bin/openmeteo-api download icon-d2-native --group heidiVars --update-meta > ~/log/icon-d2-native_heidi.log 2>&1 || cat ~/log/icon-d2-native_heidi.log
-#41 2,5,8,11,14,17,20,23 * * * /usr/local/bin/openmeteo-api download icon-eu-native --group modelLevel > ~/log/icon-eu-native_model-level.log 2>&1 || cat ~/log/icon-eu-native_model-level.log
-#41 2,5,8,11,14,17,20,23 * * * /usr/local/bin/openmeteo-api download icon-eu-native --group hiresTemp --update-meta > ~/log/icon-eu-native_hires-temp.log 2>&1 || cat ~/log/icon-eu-native_hires-temp.log
-#41 2,8,14,20 * * * /usr/local/bin/openmeteo-api download icon-native --group modelLevel > ~/log/icon-native_model-level.log 2>&1 || cat ~/log/icon-native_model-level.log
-#41 2,8,14,20 * * * /usr/local/bin/openmeteo-api download icon-native --group hiresTemp --update-meta > ~/log/icon-native_hires-temp.log 2>&1 || cat ~/log/icon-native_hires-temp.log
+# hiresTemp writes the sibling latest_hires-temp.json and, once, the parent static hhl.om. Map layers have to read both files.
+# heidiVars stays on the parent and writes latest_heidi.json, so it does not overwrite the surface job's spatial files.
+# Keep these off the surface job minutes. Do not point them at dwd_icon_*_native_model_level; that domain only accepts --group modelLevel.
+#53 0,3,6,9,12,15,18,21 * * * /usr/local/bin/openmeteo-api download icon-d2-native --group hiresTemp --update-meta > ~/log/icon-d2-native_hires-temp.log 2>&1 || cat ~/log/icon-d2-native_hires-temp.log
+#45 0,3,6,9,12,15,18,21 * * * /usr/local/bin/openmeteo-api download icon-d2-native --group heidiVars --update-meta > ~/log/icon-d2-native_heidi.log 2>&1 || cat ~/log/icon-d2-native_heidi.log
+#48 2,5,8,11,14,17,20,23 * * * /usr/local/bin/openmeteo-api download icon-eu-native --group hiresTemp --update-meta > ~/log/icon-eu-native_hires-temp.log 2>&1 || cat ~/log/icon-eu-native_hires-temp.log
+#40 2,5,8,11,14,17,20,23 * * * /usr/local/bin/openmeteo-api download icon-eu-native --group heidiVars --update-meta > ~/log/icon-eu-native_heidi.log 2>&1 || cat ~/log/icon-eu-native_heidi.log
+#41 2,8,14,20 * * * /usr/local/bin/openmeteo-api download icon-native --group hiresTemp --update-meta --max-forecast-hour 24 > ~/log/icon-native_hires-temp.log 2>&1 || cat ~/log/icon-native_hires-temp.log
+#36 2,8,14,20 * * * /usr/local/bin/openmeteo-api download icon-native --group heidiVars --update-meta --max-forecast-hour 24 > ~/log/icon-native_heidi.log 2>&1 || cat ~/log/icon-native_heidi.log
 
 # GFS
 40 3,9,15,21 * * * /usr/local/bin/openmeteo-api download-gfs gfs025 > ~/log/gfs025.log 2>&1 || cat ~/log/gfs025.log
