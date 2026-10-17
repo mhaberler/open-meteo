@@ -731,6 +731,9 @@ struct DownloadIconCommand: AsyncCommand {
         if requestedNativeDomain.modelLevelParent != nil && (group != .modelLevel || signature.onlyVariables != nil) {
             throw Abort(.badRequest, reason: "Model-level domains only support --group modelLevel. Use the parent domain for --only-variables.")
         }
+        if group == .hiresTemp && nativeDomain?.modelLevelDomain == nil {
+            throw Abort(.badRequest, reason: "--group hiresTemp needs a domain with a model-level sibling: icon-native, icon-eu-native or icon-d2-native.")
+        }
 
         let variables = try Self.variables(feed: feed, group: group, onlyVariables: signature.onlyVariables)
 
