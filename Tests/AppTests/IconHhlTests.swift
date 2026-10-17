@@ -35,12 +35,25 @@ import OmFileFormat
         #expect(last == [4, 1004, 2004, 3004])
     }
 
-    /// Full-level height is the mean of the enclosing half levels.
-    @Test func fullLevelIsMeanOfHalves() {
+    /// Full-level height is the mean of the enclosing half levels. AGL is measured from the
+    /// last half level, which is HSURF, not from the sea-masked elevation file.
+    @Test func hhlColumnHeights() {
         let halfAsl: [Float] = [22000, 19402, 18013, 531]
-        func fullAsl(_ fullLevel: Int) -> Float { (halfAsl[fullLevel - 1] + halfAsl[fullLevel]) / 2 }
-        #expect(fullAsl(1) == (22000 + 19402) / 2)
-        #expect(fullAsl(3) == (18013 + 531) / 2)
+        #expect(IconHhlColumn.fullLevelASL(halfAsl, fullLevel: 1) == Float(20701))
+        #expect(IconHhlColumn.fullLevelASL(halfAsl, fullLevel: 3) == Float(9272))
+        #expect(IconHhlColumn.fullLevelASL(halfAsl, fullLevel: 4) == nil)
+        #expect(IconHhlColumn.fullLevelASL(halfAsl, fullLevel: 0) == nil)
+
+        let lowestFull = IconHhlColumn.fullLevelASL(halfAsl, fullLevel: 3)
+        #expect(IconHhlColumn.aboveGround(lowestFull, heights: halfAsl) == Float(9272 - 531))
+        let surface = IconHhlColumn.halfLevelASL(halfAsl, halfLevel: 4)
+        #expect(surface == 531)
+        #expect(IconHhlColumn.aboveGround(surface, heights: halfAsl) == 0)
+        #expect(IconHhlColumn.halfLevelASL(halfAsl, halfLevel: 5) == nil)
+
+        // A missing surface gives NaN, never an ASL value labelled as AGL.
+        let broken: [Float] = [22000, .nan]
+        #expect(IconHhlColumn.aboveGround(22000, heights: broken)?.isNaN == true)
     }
 
     @Test func levelNamesRoundTrip() {
