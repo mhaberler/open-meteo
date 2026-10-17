@@ -66,7 +66,7 @@ struct DownloadIconCommand: AsyncCommand {
                     domain.getVarAndLevel($0)?.cat == "model-level"
                 }
             case .heidiVars:
-                return Array(Self.heidiSurface)
+                return IconSurfaceVariable.allCases.filter { Self.heidiSurface.contains($0) }
             case .hiresTemp:
                 let full: [IconModelLevelVariableType] = [.wind_u_component, .wind_v_component, .temperature, .specific_humidity, .pressure, .cloud_water, .cloud_ice, .cloud_cover]
                 return full.flatMap { variable in

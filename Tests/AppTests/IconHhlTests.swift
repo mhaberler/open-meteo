@@ -169,6 +169,12 @@ import OmFileFormat
         #expect(DownloadIconCommand.VariableGroup.hiresTemp.siblingRealm == "hires-temp")
     }
 
+    @Test func heidiVarsOrderIsStable() {
+        let a = DownloadIconCommand.VariableGroup.heidiVars.variables(domain: .iconD2).map { "\($0)" }
+        let b = DownloadIconCommand.VariableGroup.heidiVars.variables(domain: .iconD2).map { "\($0)" }
+        #expect(a == b)
+    }
+
     @Test func hhlMissingFileErrorIsDescriptive() {
         let msg = "\(IconModelLevelError.staticFileMissing(domain: "icon-d2-native"))"
         #expect(msg.contains("hhl.om"))
