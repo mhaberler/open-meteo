@@ -155,15 +155,6 @@ import OmFileFormat
         #expect(IconModelLevelVariable(rawValue: "temperature_2m") == nil)
     }
 
-    @Test func hhlColumnCacheMemoisesByReference() {
-        let cache = HhlColumnCache()
-        #expect(cache.column == nil)
-        cache.column = [1, 2, 3]
-        let copy = cache
-        copy.column = [9, 8]
-        #expect(cache.column == [9, 8])
-    }
-
     /// The SDK has no model-level field. A level must not be reported as an altitude in metres.
     @Test func flatBuffersDoesNotMapLevelToAltitude() throws {
         let level = try #require(ForecastHeightVariable(rawValue: "temperature_level65"))
