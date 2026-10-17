@@ -35,6 +35,14 @@ import OmFileFormat
         #expect(last == [4, 1004, 2004, 3004])
     }
 
+    /// Full-level height is the mean of the enclosing half levels.
+    @Test func fullLevelIsMeanOfHalves() {
+        let halfAsl: [Float] = [22000, 19402, 18013, 531]
+        func fullAsl(_ fullLevel: Int) -> Float { (halfAsl[fullLevel - 1] + halfAsl[fullLevel]) / 2 }
+        #expect(fullAsl(1) == (22000 + 19402) / 2)
+        #expect(fullAsl(3) == (18013 + 531) / 2)
+    }
+
     @Test func levelNamesRoundTrip() {
         let column = ForecastHeightVariable(rawValue: "temperature_level65")
         #expect(column?.modelLevel == true)
@@ -125,6 +133,28 @@ import OmFileFormat
         }
     }
 
+    @Test func hhlColumnCacheMemoisesByReference() {
+        let cache = HhlColumnCache()
+        #expect(cache.column == nil)
+        cache.column = [1, 2, 3]
+        let copy = cache
+        copy.column = [9, 8]
+        #expect(cache.column == [9, 8])
+    }
+
+    @Test func hhlMissingFileErrorIsDescriptive() {
+        let msg = "\(IconModelLevelError.staticFileMissing(domain: "icon-d2-native"))"
+        #expect(msg.contains("hhl.om"))
+        #expect(msg.contains("icon-d2-native"))
+    }
+
+    @Test func modelLevelOutOfRangeErrorIsDescriptive() {
+        let msg = "\(IconModelLevelError.levelOutOfRange(level: 200, max: 65, domain: "icon-d2-native"))"
+        #expect(msg.contains("200"))
+        #expect(msg.contains("1...65"))
+        #expect(msg.contains("icon-d2-native"))
+    }
+
     @Test func specificHumidityUsesLogarithmicCompression() {
         let qv: any GenericVariable = IconModelLevelVariable(variable: .specific_humidity, level: 60)
         let water: any GenericVariable = IconModelLevelVariable(variable: .cloud_water, level: 60)
@@ -136,5 +166,20 @@ import OmFileFormat
         #expect(qv.scalefactor == 10000)
         #expect(t.omFileCompression == .pfor_delta2d_int16)
         #expect((IconSurfaceVariable.temperature_2m as any GenericVariable).omFileCompression == .pfor_delta2d_int16)
+    }
+
+    @Test func logarithmicCompressionPreservesDryLayerQv() async throws {
+        let values: [Float] = [0.0004, 0.05, 0.5, 5.0, 25.0]
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("test_qv_log.om").path
+        try FileManager.default.removeItemIfExists(at: file)
+        defer { try? FileManager.default.removeItem(atPath: file) }
+        try values.writeOmFile(file: file, dimensions: [values.count], chunks: [values.count], compression: .pfor_delta2d_int16_logarithmic, scalefactor: 10000)
+        let reader = try await OmFileReader(file: file).expectArray(of: Float.self)
+        let back = try await reader.read()
+        #expect(back[0] > 0)
+        #expect(abs(back[0] - 0.0004) < 3e-4)
+        for (a, b) in zip(values, back) where a >= 0.05 {
+            #expect(abs(a - b) / a < 0.01)
+        }
     }
 }

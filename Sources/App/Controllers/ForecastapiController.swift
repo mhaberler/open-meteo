@@ -1129,6 +1129,10 @@ enum MultiDomains: String, RawRepresentableString, CaseIterable, Sendable {
             func makeReader(lat: Float, lon: Float, elevation: Float, mode: GridSelectionMode, options: GenericReaderOptions) async throws -> RawReaderDerivationGroup.ReaderResult? {
                 switch self {
                 case .domain(let domain, let variable):
+                    if let native = domain as? IconNativeDomain, variable == IconModelLevelVariable.self {
+                        guard let reader = try await native.makeModelLevelDerived(lat: lat, lon: lon, elevation: elevation, mode: mode, options: options) else { return nil }
+                        return (reader, reader.resolvedTargetElevation)
+                    }
                     guard let reader = try await domain.makeDerivedHourly(variableType: variable, lat: lat, lon: lon, elevation: elevation, mode: mode, options: options) else { return nil }
                     return (reader, reader.resolvedTargetElevation)
                 case .mixedBeforeDerivation(let group):
