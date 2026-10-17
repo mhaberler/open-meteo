@@ -44,4 +44,17 @@ import OmFileFormat
         #expect(fixed?.rawValue == "temperature_80m")
         #expect(ForecastVariable(rawValue: "wind_w_level66")?.rawValue == "wind_w_level66")
     }
+
+    @Test func specificHumidityUsesLogarithmicCompression() {
+        let qv: any GenericVariable = IconModelLevelVariable(variable: .specific_humidity, level: 60)
+        let water: any GenericVariable = IconModelLevelVariable(variable: .cloud_water, level: 60)
+        let ice: any GenericVariable = IconModelLevelVariable(variable: .cloud_ice, level: 60)
+        let t: any GenericVariable = IconModelLevelVariable(variable: .temperature, level: 60)
+        #expect(qv.omFileCompression == .pfor_delta2d_int16_logarithmic)
+        #expect(water.omFileCompression == .pfor_delta2d_int16_logarithmic)
+        #expect(ice.omFileCompression == .pfor_delta2d_int16_logarithmic)
+        #expect(qv.scalefactor == 10000)
+        #expect(t.omFileCompression == .pfor_delta2d_int16)
+        #expect((IconSurfaceVariable.temperature_2m as any GenericVariable).omFileCompression == .pfor_delta2d_int16)
+    }
 }

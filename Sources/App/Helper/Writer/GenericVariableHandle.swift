@@ -191,7 +191,7 @@ struct GenericVariableHandle: Sendable {
                     type: Float.self,
                     dimensions: dimensions.map(UInt64.init),
                     chunkDimensions: chunks.map(UInt64.init),
-                    compression: compression,
+                    compression: variable.compression(or: compression),
                     scale_factor: variable.scalefactor,
                     add_offset: 0
                 )
@@ -376,7 +376,7 @@ struct GenericVariableHandle: Sendable {
 
             let variableUploadQueues = !uploadS3OnlyProbabilities || variable.omFileName.file == ProbabilityVariable.precipitation_probability.omFileName.file ? multipartUploadQueues : nil
 
-            try await om.updateFromTimeOrientedStreaming3D(variable: variable.omFileName.file, run: run ?? time.range.lowerBound, time: time, scalefactor: variable.scalefactor, compression: compression, onlyGeneratePreviousDays: onlyGeneratePreviousDays, multipartUploadQueues: variableUploadQueues) { yRange, xRange, memberRange in
+            try await om.updateFromTimeOrientedStreaming3D(variable: variable.omFileName.file, run: run ?? time.range.lowerBound, time: time, scalefactor: variable.scalefactor, compression: variable.compression(or: compression), onlyGeneratePreviousDays: onlyGeneratePreviousDays, multipartUploadQueues: variableUploadQueues) { yRange, xRange, memberRange in
                 let nLoc = yRange.count * xRange.count
                 var data3d = Array3DFastTime(nLocations: nLoc, nLevel: memberRange.count, nTime: time.count)
                 var readTemp = [Float](repeating: .nan, count: nLoc * maxTimeStepsPerFile)

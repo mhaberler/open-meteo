@@ -133,6 +133,9 @@ protocol GenericVariable: GenericVariableMixable, Sendable, Hashable {
     /// The scalefactor to compress data
     var scalefactor: Float { get }
 
+    /// OM-file compression. Defaults to lossy int16. Override for a large dynamic range.
+    var omFileCompression: OmCompressionType { get }
+
     /// Kind of interpolation for this variable. Used to interpolate from 1 to 3 hours
     var interpolation: ReaderInterpolation { get }
 
@@ -144,6 +147,15 @@ protocol GenericVariable: GenericVariableMixable, Sendable, Hashable {
 
     /// If true, forecasts from the previous model runs will be preserved
     var storePreviousForecast: Bool { get }
+}
+
+extension GenericVariable {
+    var omFileCompression: OmCompressionType { .pfor_delta2d_int16 }
+
+    /// Keep a caller-supplied compression unless this variable names its own.
+    func compression(or fallback: OmCompressionType) -> OmCompressionType {
+        omFileCompression == .pfor_delta2d_int16 ? fallback : omFileCompression
+    }
 }
 
 
