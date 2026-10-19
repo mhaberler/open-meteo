@@ -17,23 +17,41 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 LOG_DIR = Path(os.environ.get("INGEST_LOG_DIR", "/open-meteo/log"))
+NEXT_LOG_DIR = Path(os.environ.get("INGEST_NEXT_LOG_DIR", "/open-meteo-next/log"))
 DB_PATH = Path(os.environ.get("INGEST_DB", Path(__file__).resolve().parent / "data" / "phases.sqlite"))
 DISK_PATH = Path(os.environ.get("INGEST_DISK_PATH", "/open-meteo"))
-RETENTION_DAYS = 14
+RETENTION_DAYS = 30
 GIB = 1024 ** 3
 
-# Filename stem -> (model, group). Order is the chart row order.
-JOBS: list[tuple[str, str, str]] = [
-    ("icon_heidivars.log", "icon", "heidiVars"),
-    ("icon_model-level.log", "icon", "model-level"),
-    ("icon-eu_heidivars.log", "icon-eu", "heidiVars"),
-    ("icon-eu_model-level.log", "icon-eu", "model-level"),
-    ("icon-d2_heidivars.log", "icon-d2", "heidiVars"),
-    ("icon-d2_model-level.log", "icon-d2", "model-level"),
+
+@dataclass(frozen=True)
+class Job:
+    filename: str
+    model: str
+    group: str
+    log_dir: Path
+
+
+# Order is the chart row order. Next-instance models stay distinct from the
+# production names so the same run hour does not upsert those bars.
+JOBS: list[Job] = [
+    Job("icon_heidivars.log", "icon", "heidiVars", LOG_DIR),
+    Job("icon_model-level.log", "icon", "model-level", LOG_DIR),
+    Job("icon-eu_heidivars.log", "icon-eu", "heidiVars", LOG_DIR),
+    Job("icon-eu_model-level.log", "icon-eu", "model-level", LOG_DIR),
+    Job("icon-d2_heidivars.log", "icon-d2", "heidiVars", LOG_DIR),
+    Job("icon-d2_model-level.log", "icon-d2", "model-level", LOG_DIR),
+    Job("icon-d2_heidivars.log", "icon-d2-next", "heidiVars", NEXT_LOG_DIR),
+    Job("icon-d2_model-level.log", "icon-d2-next", "model-level", NEXT_LOG_DIR),
+    Job("icon-eu_heidivars.log", "icon-eu-next", "heidiVars", NEXT_LOG_DIR),
+    Job("icon-eu_model-level.log", "icon-eu-next", "model-level", NEXT_LOG_DIR),
+    Job("icon_heidivars.log", "icon-next", "heidiVars", NEXT_LOG_DIR),
+    Job("icon_model-level.log", "icon-next", "model-level", NEXT_LOG_DIR),
 ]
 
 DUR = r"(\d+(?:\.\d+)?ms|\d+(?:\.\d+)?s|\d+(?:\.\d+)?m|\d+:\d{2})"
-RE_START = re.compile(r"Downloading domain '([^']+)' run '([^']+)'")
+# Native global logs name both trees: "domain 'icon-native' and 'icon' run '…'".
+RE_START = re.compile(r"Downloading domain '(.+)' run '([^']+)'")
 RE_DL_DONE = re.compile(rf"Finished downloading .+ in {DUR}")
 RE_CONVERT = re.compile(rf"Convert completed in {DUR} \[Time ([^\]]+)\]")
 RE_PREV = re.compile(rf"Previous day convert in {DUR}")
@@ -373,22 +391,22 @@ class Store:
             )
             self._db.commit()
 
-    def import_log(self, filename: str, model: str, group: str) -> int:
-        path = LOG_DIR / filename
+    def import_log(self, job: Job) -> int:
+        path = job.log_dir / job.filename
         if not path.exists():
             return 0
         text = path.read_text(errors="replace")
         st = path.stat()
         mtime = datetime.fromtimestamp(st.st_mtime, timezone.utc)
         opened = datetime.fromtimestamp(st.st_ctime, timezone.utc)
-        rows = phases_from_log(job_id(model, group), text, mtime, opened)
+        rows = phases_from_log(job_id(job.model, job.group), text, mtime, opened)
         for row in rows:
             self.upsert(row)
         return len(rows)
 
     def backfill(self) -> None:
-        for filename, model, group in JOBS:
-            self.import_log(filename, model, group)
+        for job in JOBS:
+            self.import_log(job)
 
     def prune(self, now: datetime | None = None, days: int = RETENTION_DAYS) -> int:
         now = now or datetime.now(timezone.utc)
@@ -407,7 +425,8 @@ class Store:
         cutoff = iso(now - timedelta(days=days))
         groups = []
         labels = {}
-        for order, (_, model, group) in enumerate(JOBS):
+        for order, job in enumerate(JOBS):
+            model, group = job.model, job.group
             key = job_id(model, group)
             labels[key] = (model, group)
             groups.append({"id": key, "content": job_label(model, group), "order": order})

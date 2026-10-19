@@ -186,7 +186,7 @@ function draw(data) {
   }));
   const spans = data.spans || [];
   const day = 24 * 3600 * 1000;
-  let earliest = now - 7 * day;
+  let earliest = now - 30 * day;
   let rangeEnd = now + 60 * 60 * 1000;
   for (const span of spans) {
     const start = new Date(span.history_start).getTime();

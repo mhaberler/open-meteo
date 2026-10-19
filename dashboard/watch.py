@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tail the six ICON ingest logs and serve the phase chart."""
+"""Tail the ICON ingest logs and serve the phase chart."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
-from phases import DB_PATH, JOBS, LOG_DIR, Follower, Store
+from phases import DB_PATH, JOBS, Follower, Store
 
 STATIC = Path(__file__).resolve().parent / "static"
 PORT = int(os.environ.get("INGEST_PORT", "8091"))
@@ -66,14 +66,16 @@ class Handler(BaseHTTPRequestHandler):
         return
 
 
-def follow(store: Store, filename: str, model: str, group: str) -> None:
-    path = LOG_DIR / filename
+def follow(store: Store, filename: str, model: str, group: str, log_dir: Path) -> None:
+    path = log_dir / filename
     follower = Follower(store, model, group)
     open_run = store.latest_open_run(follower.job)
     if open_run is not None:
         follower.run = open_run
         follower.saw_download = store.has_phase(follower.job, open_run, "process")
-    from_end = True
+    # Backfill already read a log that exists now. A file created later has
+    # to be read from the start, or that first finished run is skipped.
+    from_end = path.exists()
     while True:
         if not path.exists():
             time.sleep(1)
@@ -106,8 +108,12 @@ def main() -> None:
     threading.Thread(target=server.serve_forever, daemon=True).start()
     print(f"serving 127.0.0.1:{PORT} db={DB_PATH}", flush=True)
     threads = []
-    for filename, model, group in JOBS:
-        thread = threading.Thread(target=follow, args=(STORE, filename, model, group), daemon=True)
+    for job in JOBS:
+        thread = threading.Thread(
+            target=follow,
+            args=(STORE, job.filename, job.model, job.group, job.log_dir),
+            daemon=True,
+        )
         thread.start()
         threads.append(thread)
     while True:
