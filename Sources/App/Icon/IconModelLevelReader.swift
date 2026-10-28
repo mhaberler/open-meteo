@@ -78,7 +78,7 @@ struct IconModelLevelReader: GenericReaderProtocol {
     var targetElevation: Float { reader.targetElevation }
     var modelDtSeconds: Int { reader.modelDtSeconds }
 
-    var sourceDomain: IconDomains { reader.domain.definition.sourceDomain }
+    var downloadDomain: IconDownloadDomains { reader.domain.definition.downloadDomain }
     var domainName: String { reader.domain.definition.rawValue }
 
     func getStatic(type: ReaderStaticVariable) async throws -> Float? {
@@ -156,7 +156,7 @@ struct IconModelLevelReader: GenericReaderProtocol {
     }
 
     private func validate(type: IconModelLevelVariableType, level: Int) throws {
-        let max = type.isHalfLevel ? sourceDomain.numberOfModelHalfLevels : sourceDomain.numberOfModelFullLevels
+        let max = type.isHalfLevel ? downloadDomain.numberOfModelHalfLevels : downloadDomain.numberOfModelFullLevels
         guard (1...max).contains(level) else {
             throw IconModelLevelError.levelOutOfRange(level: level, max: max, domain: domainName)
         }
@@ -170,7 +170,7 @@ struct IconModelLevelReader: GenericReaderProtocol {
         if let cached = hhlCache.column {
             return cached
         }
-        guard let file = await reader.domain.getStaticFile(type: .hhl, httpClient: reader.httpClient, logger: reader.logger) else {
+        guard let file = await reader.domain.getStaticFile(type: .hhl) else {
             throw IconModelLevelError.staticFileMissing(domain: domainName)
         }
         let column = try await reader.domain.grid.readColumnFromStaticFile(gridpoint: reader.position, file: file)

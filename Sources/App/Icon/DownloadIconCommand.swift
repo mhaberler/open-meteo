@@ -303,7 +303,7 @@ struct DownloadIconCommand: AsyncCommand {
         let chunkX = min(nx, max(1, 1024 / chunkY))
         // Another job may have written the file during the download. `writeOmFile` traps on an existing file.
         if FileManager.default.fileExists(atPath: path) {
-            logger.info("HHL for \(domain) was written by another job")
+            logger.info("HHL for \(feed) was written by another job")
             return
         }
         try stacked.writeOmFile(file: path, dimensions: [ny, nx, nlev], chunks: [chunkY, chunkX, nlev], compression: .pfor_delta2d, scalefactor: 1)
@@ -729,7 +729,7 @@ struct DownloadIconCommand: AsyncCommand {
         if requestedNativeDomain.modelLevelParent != nil && (group != .modelLevel || signature.onlyVariables != nil) {
             throw Abort(.badRequest, reason: "Model-level domains only support --group modelLevel. Use the parent domain for --only-variables.")
         }
-        if group == .hiresTemp && nativeDomain?.modelLevelDomain == nil {
+        if group == .hiresTemp && nativeDomain.modelLevelDomain == nil {
             throw Abort(.badRequest, reason: "--group hiresTemp needs a domain with a model-level sibling: icon-native, icon-eu-native or icon-d2-native.")
         }
 

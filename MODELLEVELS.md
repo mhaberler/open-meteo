@@ -18,7 +18,7 @@ Cron targets the parent (`icon-d2-native`, `icon-eu-native`, `icon-native`). The
 
 Only `--group hiresTemp` on a domain with a sibling downloads `hhl.om`. EPS feeds publish HHL for the lowest levels only, and a surface job must not wait on HHL. `--group hiresTemp` on any other domain is rejected.
 
-`--update-meta` still advances `static/meta.json`. A hires-only run has no surface marker (`temperature_2m` and the like), so meta would not move without the flag. `--max-forecast-hour` caps the lead time. The download deadline stays hard-coded (2 h for D2, 5 h otherwise).
+`static/meta.json` advances on every time-series convert. Upstream dropped the surface-variable allow-list, so a `hiresTemp` run writes meta for the sibling without a flag. A pressure-only ensemble download still leaves meta alone. `--max-forecast-hour` caps the lead time. The download deadline stays hard-coded (2 h for D2, 5 h otherwise).
 
 ## Cron (`/etc/cron.d/openmeteo-api`)
 
@@ -26,29 +26,29 @@ These lines are installed. EU and D2 `hiresTemp` and `heidiVars` run on the pare
 
 ```cron
 # icon-d2 native column -> sibling latest_hires-temp.json
-53 0,3,6,9,12,15,18,21 * * * openmeteo-api nice -15 /usr/local/bin/openmeteo-api download icon-d2-native --update-meta --group hiresTemp --concurrent 12 > $DATA_DIRECTORY/log/icon-d2_model-level.log 2>&1 || cat $DATA_DIRECTORY/log/icon-d2_model-level.log
+53 0,3,6,9,12,15,18,21 * * * openmeteo-api nice -15 /usr/local/bin/openmeteo-api download icon-d2-native --group hiresTemp --concurrent 12 > $DATA_DIRECTORY/log/icon-d2_model-level.log 2>&1 || cat $DATA_DIRECTORY/log/icon-d2_model-level.log
 
 # icon-d2 native heidiVars -> parent
-45 0,3,6,9,12,15,18,21 * * * openmeteo-api nice -15 /usr/local/bin/openmeteo-api download icon-d2-native --update-meta --group heidiVars --concurrent 12 > $DATA_DIRECTORY/log/icon-d2_heidivars.log 2>&1 || cat $DATA_DIRECTORY/log/icon-d2_heidivars.log
+45 0,3,6,9,12,15,18,21 * * * openmeteo-api nice -15 /usr/local/bin/openmeteo-api download icon-d2-native --group heidiVars --concurrent 12 > $DATA_DIRECTORY/log/icon-d2_heidivars.log 2>&1 || cat $DATA_DIRECTORY/log/icon-d2_heidivars.log
 
 # icon-eu native column -> sibling latest_hires-temp.json
-48 2,5,8,11,14,17,20,23 * * * openmeteo-api nice -17 /usr/local/bin/openmeteo-api download icon-eu-native --update-meta --group hiresTemp --concurrent 12 > $DATA_DIRECTORY/log/icon-eu_model-level.log 2>&1 || cat $DATA_DIRECTORY/log/icon-eu_model-level.log
+48 2,5,8,11,14,17,20,23 * * * openmeteo-api nice -17 /usr/local/bin/openmeteo-api download icon-eu-native --group hiresTemp --concurrent 12 > $DATA_DIRECTORY/log/icon-eu_model-level.log 2>&1 || cat $DATA_DIRECTORY/log/icon-eu_model-level.log
 
 # icon-eu native heidiVars -> parent
-40 2,5,8,11,14,17,20,23 * * * openmeteo-api nice -17 /usr/local/bin/openmeteo-api download icon-eu-native --update-meta --group heidiVars --concurrent 12 > $DATA_DIRECTORY/log/icon-eu_heidivars.log 2>&1 || cat $DATA_DIRECTORY/log/icon-eu_heidivars.log
+40 2,5,8,11,14,17,20,23 * * * openmeteo-api nice -17 /usr/local/bin/openmeteo-api download icon-eu-native --group heidiVars --concurrent 12 > $DATA_DIRECTORY/log/icon-eu_heidivars.log 2>&1 || cat $DATA_DIRECTORY/log/icon-eu_heidivars.log
 
 # icon global native column, first 24h -> sibling latest_hires-temp.json
-41 2,8,14,20 * * * openmeteo-api nice -19 /usr/local/bin/openmeteo-api download icon-native --update-meta --group hiresTemp --max-forecast-hour 24 --concurrent 12 > $DATA_DIRECTORY/log/icon_model-level.log 2>&1 || cat $DATA_DIRECTORY/log/icon_model-level.log
+41 2,8,14,20 * * * openmeteo-api nice -19 /usr/local/bin/openmeteo-api download icon-native --group hiresTemp --max-forecast-hour 24 --concurrent 12 > $DATA_DIRECTORY/log/icon_model-level.log 2>&1 || cat $DATA_DIRECTORY/log/icon_model-level.log
 
 # icon global native heidiVars, first 24h -> parent
-36 2,8,14,20 * * * openmeteo-api nice -19 /usr/local/bin/openmeteo-api download icon-native --update-meta --group heidiVars --max-forecast-hour 24 --concurrent 12 > $DATA_DIRECTORY/log/icon_heidivars.log 2>&1 || cat $DATA_DIRECTORY/log/icon_heidivars.log
+36 2,8,14,20 * * * openmeteo-api nice -19 /usr/local/bin/openmeteo-api download icon-native --group heidiVars --max-forecast-hour 24 --concurrent 12 > $DATA_DIRECTORY/log/icon_heidivars.log 2>&1 || cat $DATA_DIRECTORY/log/icon_heidivars.log
 ```
 
 An existing elevation file is left in place. Delete the parent and remapped `dwd_icon` HSURF files to regenerate the sea mask. `FR_LAKE` is added to `FR_LAND` before the sea test, so lakes are not stored as −999.
 
 ## First D2 run (2026-10-16 21:00 UTC)
 
-Parent `dwd_icon_d2_native` and sibling `dwd_icon_d2_native_model_level` `static/meta.json` share that run and the same data end, 2026-10-18 22:00 UTC. The end is exclusive: hours 0 through 48, then one step. The sibling file was written about two minutes after the parent, which is the `hiresTemp` job with `--update-meta`. That flag writes `meta.json` for each domain present in the handles. `hiresTemp` advances the sibling, `heidiVars` advances the parent. EU and global native directories were not on disk yet.
+Parent `dwd_icon_d2_native` and sibling `dwd_icon_d2_native_model_level` `static/meta.json` share that run and the same data end, 2026-10-18 22:00 UTC. The end is exclusive: hours 0 through 48, then one step. The sibling file was written about two minutes after the parent, which is the `hiresTemp` job. `convert` writes `meta.json` for each domain present in the handles. `hiresTemp` advances the sibling, `heidiVars` advances the parent. EU and global native directories were not on disk yet.
 
 On this host `DEM_DOWNSCALING=false`, so the API elevation is the model cell, the same value as `model_elevation`. Starnberger See cells stay at HSURF (about 581–614 m) with the lowest full level 10 m above ground. A native nearest cell can sit tens of metres off the lat-lon cell and off DEM90. That is grid selection. A masked lake would report elevation 0 while `model_elevation` stayed near 580 m.
 
