@@ -16,3 +16,10 @@ data_spatial
 .vscode/
 untracked/
 
+BuildInfo.generated-2.d
+BuildInfo.generated-2.dia
+BuildInfo.generated-2.swiftmodule
+BuildInfo.generated-2.swiftdeps
+Package.resolved
+Package.resolved
+Package.resolved
