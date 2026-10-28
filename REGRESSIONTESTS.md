@@ -27,7 +27,9 @@ Munich 48.14, 11.58 and Zugspitze 47.42, 10.98 are ordinary land points. Starnbe
 
 ## Names
 
-Surface is the heidi surface set without `snowfall_convective_water_equivalent`: gusts and 10 m wind components, `visibility`, `pressure_msl`, `surface_pressure_model`, `model_elevation`, `weather_code`, precipitation, rain, showers, snowfall water equivalent and height, 2 m temperature and humidity, soil temperature at 0, 6, 18, and 54 cm, cloud cover and its three layers, `cloud_base`, `freezing_level_height`, CAPE, CIN, lightning potential, and convective cloud base and top.
+The default surface list is the heidi surface set without `snowfall_convective_water_equivalent`: gusts and 10 m wind components, `visibility`, `pressure_msl`, `surface_pressure_model`, `model_elevation`, `weather_code`, precipitation, rain, showers, snowfall water equivalent and height, 2 m temperature and humidity, soil temperature at 0, 6, 18, and 54 cm, cloud cover and its three layers, `cloud_base`, `freezing_level_height`, CAPE, CIN, lightning potential, and convective cloud base and top.
+
+`--surface` also requests the names a full `--group surface` download stores and the wetterheidi archive does not: five soil-moisture layers, `snow_depth`, both heat fluxes, `direct_radiation`, `diffuse_radiation`, and `updraft`. Those series must be present and finite on both hosts, with no numeric gate. On the current oracle they are all null, so that run fails. `snowfall_convective_water_equivalent` stays out of both lists. The 80/120/180 m fields stay out; they are `--group modelLevel`.
 
 The profile sample is full levels 1, 30, and 65 for temperature, u, v, specific humidity, pressure, and cloud cover; half levels 64, 65, and 66 for `wind_w` and `height_half_agl`; plus `height_agl_level65`. D2 has 65 full levels and 66 half levels.
 
@@ -61,6 +63,7 @@ Each run overwrites `/var/www/vpsmon/regression/index.html` and prints `https://
 
 ```bash
 python3 scripts/icon_d2_native_regression.py
+python3 scripts/icon_d2_native_regression.py --surface
 ```
 
-`--candidate`, `--oracle`, and `--report` override the defaults.
+`--candidate`, `--oracle`, `--report`, and `--surface` override the defaults.

@@ -102,48 +102,38 @@ import OmFileFormat
         }
     }
 
-    @Test func heidiVarsIsCuratedSurfaceSet() {
-        let expected = DownloadIconCommand.VariableGroup.heidiSurface
-        #expect(expected.count == 31)
+    /// Model elevation and model surface pressure ride the deterministic surface catalogs.
+    /// Ensemble lists omit them so the HSURF copy does not run and `ps` is not fetched twice.
+    @Test func modelOrographyFieldsFollowDeterministicSurfaceGroups() {
+        let fields: [IconSurfaceVariable] = [.model_elevation, .surface_pressure_model]
+        let groups: [DownloadIconCommand.VariableGroup] = [.all, .surface, .surfaceAndPressure]
         for domain in [IconDownloadDomains.iconD2, .iconEu, .icon] {
-            let vars = DownloadIconCommand.VariableGroup.heidiVars.variables(domain: domain)
-            let surface = vars.compactMap { $0 as? IconSurfaceVariable }
-            #expect(surface.count == vars.count)
-            #expect(Set(surface) == expected)
-            #expect(surface.allSatisfy {
-                let cat = domain.getVarAndLevel($0)?.cat ?? "single-level"
-                return cat == "single-level" || cat == "soil-level"
-            })
+            for group in groups {
+                let surface = group.variables(domain: domain).compactMap { $0 as? IconSurfaceVariable }
+                for field in fields {
+                    #expect(surface.contains(field))
+                }
+            }
+        }
+        for domain in [IconDownloadDomains.iconD2Eps, .iconEuEps, .iconEps] {
+            for group in groups {
+                let surface = group.variables(domain: domain).compactMap { $0 as? IconSurfaceVariable }
+                for field in fields {
+                    #expect(!surface.contains(field))
+                }
+            }
         }
 
         #expect(IconDownloadDomains.iconD2.getVarAndLevel(IconSurfaceVariable.cloud_base)?.variable == "ceiling")
         #expect(IconDownloadDomains.iconEu.getVarAndLevel(IconSurfaceVariable.cloud_base)?.variable == "ceiling")
         #expect(IconDownloadDomains.icon.getVarAndLevel(IconSurfaceVariable.cloud_base) == nil)
         #expect(IconDownloadDomains.iconD2.getVarAndLevel(IconSurfaceVariable.model_elevation) == nil)
-        #expect(IconDownloadDomains.iconD2.getVarAndLevel(IconSurfaceVariable.visibility) == nil)
-
-        func downloadable(_ domain: IconDownloadDomains) -> Int {
-            DownloadIconCommand.VariableGroup.heidiVars.variables(domain: domain)
-                .filter { domain.getVarAndLevel($0) != nil }.count
-        }
-        // VIS is not in the v1 feed, and model_elevation is written from the static file.
-        #expect(downloadable(.icon) == 25)
-        #expect(downloadable(.iconEu) == 28)
-        #expect(downloadable(.iconD2) == 29)
         #expect(IconDownloadDomains.iconD2.getVarAndLevel(IconSurfaceVariable.surface_pressure_model)?.variable == "ps")
         #expect(IconDownloadDomains.iconEps.getVarAndLevel(IconSurfaceVariable.surface_pressure_model) == nil)
         #expect(IconDownloadDomains.iconEuEps.getVarAndLevel(IconSurfaceVariable.surface_pressure_model) == nil)
         #expect(IconDownloadDomains.iconD2Eps.getVarAndLevel(IconSurfaceVariable.surface_pressure_model) == nil)
-    }
-
-    @Test func heidiVarsOnlyExcludedFromAllCasesGroups() {
-        for domain in [IconDownloadDomains.iconD2, .iconEu, .icon] {
-            for group: DownloadIconCommand.VariableGroup in [.all, .surface, .surfaceAndPressure] {
-                let surface = group.variables(domain: domain).compactMap { $0 as? IconSurfaceVariable }
-                #expect(!surface.contains(.model_elevation))
-                #expect(!surface.contains(.surface_pressure_model))
-            }
-        }
+        #expect(IconSurfaceVariable.surface_pressure_model.storePreviousForecast)
+        #expect(!IconSurfaceVariable.model_elevation.storePreviousForecast)
     }
 
     /// Only sibling names are diverted to the model-level writer.
@@ -165,18 +155,12 @@ import OmFileFormat
         #expect(fixed.getFlatBuffersMeta().altitude == 80)
     }
 
-    /// heidiVars and the parent surface job both run on the parent. They must not share spatial files.
+    /// `hiresTemp` must not share the sibling's unsuffixed spatial file. Surface stays on the parent file.
     @Test func spatialRealmsDoNotClash() {
-        #expect(DownloadIconCommand.VariableGroup.heidiVars.realm == "heidi")
         #expect(DownloadIconCommand.VariableGroup.surface.realm == nil)
         #expect(DownloadIconCommand.VariableGroup.hiresTemp.realm == nil)
         #expect(DownloadIconCommand.VariableGroup.hiresTemp.siblingRealm == "hires-temp")
-    }
-
-    @Test func heidiVarsOrderIsStable() {
-        let a = DownloadIconCommand.VariableGroup.heidiVars.variables(domain: .iconD2).map { "\($0)" }
-        let b = DownloadIconCommand.VariableGroup.heidiVars.variables(domain: .iconD2).map { "\($0)" }
-        #expect(a == b)
+        #expect(DownloadIconCommand.VariableGroup.modelLevel.realm == "model-level")
     }
 
     @Test func hhlMissingFileErrorIsDescriptive() {

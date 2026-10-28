@@ -51,6 +51,17 @@ SURFACE = [
     "convective_cloud_base", "convective_cloud_top",
 ]
 
+# Stored by --group surface and absent from the wetterheidi heidiVars archive.
+# Requested only with --surface. The 80/120/180 m fields are --group modelLevel.
+SURFACE_ONLY = [
+    "soil_moisture_0_to_1cm", "soil_moisture_1_to_3cm", "soil_moisture_3_to_9cm",
+    "soil_moisture_9_to_27cm", "soil_moisture_27_to_81cm",
+    "snow_depth",
+    "sensible_heat_flux", "latent_heat_flux",
+    "direct_radiation", "diffuse_radiation",
+    "updraft",
+]
+
 FULL_LEVELS = (1, 30, 65)
 FULL_VARS = (
     "temperature", "wind_u_component", "wind_v_component",
@@ -347,7 +358,11 @@ def main():
     parser.add_argument("--candidate", default=CANDIDATE)
     parser.add_argument("--oracle", default=ORACLE)
     parser.add_argument("--report", default=REPORT_PATH)
+    parser.add_argument("--surface", action="store_true", help="Also request the full-surface names the oracle does not store")
     args = parser.parse_args()
+    surface = list(SURFACE)
+    if args.surface:
+        surface.extend(SURFACE_ONLY)
 
     failures = []
     notes = []
@@ -360,8 +375,8 @@ def main():
     for point in POINTS:
         label = point["name"]
         print(label)
-        cand_status, cand_body, cand_raw, cand_url = query(args.candidate, CANDIDATE_MODEL, point, SURFACE + profile_names())
-        ora_status, ora_body, ora_raw, ora_url = query(args.oracle, ORACLE_MODEL, point, SURFACE + profile_names())
+        cand_status, cand_body, cand_raw, cand_url = query(args.candidate, CANDIDATE_MODEL, point, surface + profile_names())
+        ora_status, ora_body, ora_raw, ora_url = query(args.oracle, ORACLE_MODEL, point, surface + profile_names())
         print(" ", cand_status, cand_url)
         print(" ", ora_status, ora_url)
         if cand_status != 200 or not isinstance(cand_body.get("hourly"), dict):
@@ -371,7 +386,7 @@ def main():
             fail(failures, f"{label} oracle HTTP {ora_status}: {ora_body.get('reason', '')[:240]}")
             continue
 
-        names = SURFACE + profile_names()
+        names = surface + profile_names()
         check_series(failures, notes, f"{label} candidate", names, cand_body["hourly"])
         check_series(failures, notes, f"{label} oracle", names, ora_body["hourly"])
         check_units(failures, f"{label} candidate", cand_body.get("hourly_units", {}))

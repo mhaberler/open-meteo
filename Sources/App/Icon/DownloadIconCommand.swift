@@ -18,32 +18,20 @@ struct DownloadIconCommand: AsyncCommand {
         case pressureLevelGt500
         case pressureLevelLtE500
         case hiresTemp
-        case heidiVars
 
-        /// Written only by `--group heidiVars`. A constant orography field and the raw surface pressure
-        /// stay out of a routine surface run.
-        static let heidiVarsOnly: Set<IconSurfaceVariable> = [.model_elevation, .surface_pressure_model]
+        /// Model elevation and model surface pressure. Ensemble feeds already download `ps`
+        /// under `pressure_msl`. The orography copy follows list membership, not `getVarAndLevel`.
+        static let ensembleOmitted: Set<IconSurfaceVariable> = [.model_elevation, .surface_pressure_model]
 
-        /// Curated surface set for `--group heidiVars`. The same list is used on every domain.
-        /// Fields DWD does not publish are skipped later, when `getVarAndLevel` returns nil.
-        static let heidiSurface: Set<IconSurfaceVariable> = [
-            .wind_gusts_10m, .wind_u_component_10m, .wind_v_component_10m,
-            .visibility, .pressure_msl, .surface_pressure_model, .model_elevation, .weather_code,
-            .precipitation, .rain, .showers,
-            .snowfall_water_equivalent, .snowfall_convective_water_equivalent, .snowfall_height,
-            .temperature_2m, .relative_humidity_2m,
-            .soil_temperature_0cm, .soil_temperature_6cm, .soil_temperature_18cm, .soil_temperature_54cm,
-            .cloud_cover, .cloud_cover_low, .cloud_cover_mid, .cloud_cover_high,
-            .cloud_base, .freezing_level_height,
-            .cape, .convective_inhibition, .lightning_potential,
-            .convective_cloud_base, .convective_cloud_top
-        ]
+        private func keepsSurfaceVariable(_ variable: IconSurfaceVariable, domain: IconDownloadDomains) -> Bool {
+            !(domain.countEnsembleMember > 1 && Self.ensembleOmitted.contains(variable))
+        }
 
         func variables(domain: IconDownloadDomains) -> [any IconVariableDownloadable] {
             switch self {
             case .all:
                 return IconSurfaceVariable.allCases.filter {
-                    !Self.heidiVarsOnly.contains($0)
+                    keepsSurfaceVariable($0, domain: domain)
                 } + domain.levels.reversed().flatMap { level in
                     IconPressureVariableType.allCases.map { variable in
                         IconPressureVariable(variable: variable, level: level)
@@ -51,11 +39,11 @@ struct DownloadIconCommand: AsyncCommand {
                 }
             case .surface:
                 return IconSurfaceVariable.allCases.filter {
-                    !Self.heidiVarsOnly.contains($0) && domain.getVarAndLevel($0)?.cat != "model-level"
+                    keepsSurfaceVariable($0, domain: domain) && domain.getVarAndLevel($0)?.cat != "model-level"
                 }
             case .surfaceAndPressure:
                 return IconSurfaceVariable.allCases.filter {
-                    !Self.heidiVarsOnly.contains($0) && domain.getVarAndLevel($0)?.cat != "model-level"
+                    keepsSurfaceVariable($0, domain: domain) && domain.getVarAndLevel($0)?.cat != "model-level"
                 } + domain.levels.reversed().flatMap { level in
                     IconPressureVariableType.allCases.map { variable in
                         IconPressureVariable(variable: variable, level: level)
@@ -65,8 +53,6 @@ struct DownloadIconCommand: AsyncCommand {
                 return IconSurfaceVariable.allCases.filter {
                     domain.getVarAndLevel($0)?.cat == "model-level"
                 }
-            case .heidiVars:
-                return IconSurfaceVariable.allCases.filter { Self.heidiSurface.contains($0) }
             case .hiresTemp:
                 let full: [IconModelLevelVariableType] = [.wind_u_component, .wind_v_component, .temperature, .specific_humidity, .pressure, .cloud_water, .cloud_ice, .cloud_cover]
                 return full.flatMap { variable in
@@ -99,9 +85,6 @@ struct DownloadIconCommand: AsyncCommand {
                 return "model-level"
             case .pressureLevel:
                 return "pressure-level"
-            case .heidiVars:
-                // The parent `surface` job writes the unsuffixed spatial files for the same run.
-                return "heidi"
             default:
                 return nil
             }

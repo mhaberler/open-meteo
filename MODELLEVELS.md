@@ -10,11 +10,10 @@ Cron targets the parent (`icon-d2-native`, `icon-eu-native`, `icon-native`). The
 |---|---|---|
 | `--group modelLevel` | sibling | `latest.json` (no realm) |
 | `--group hiresTemp` | sibling | `latest_hires-temp.json` |
-| `--group heidiVars` | parent | `latest_heidi.json` |
 | surface, pressure levels | parent | parent `latest.json`, `latest_pressure-level.json` |
 | `hhl.om` (first `hiresTemp` run only), masked HSURF, unmasked `HSURF_raw` | parent static | shared with the sibling via `domainRegistryStatic` |
 
-`modelLevel` and `hiresTemp` must not share a spatial file, and neither must `heidiVars` and the parent surface job. Map layers have to read both `latest.json` and `latest_hires-temp.json`. Time-series files are per variable. `heidiVars` rewrites the same surface time series as the surface job.
+`modelLevel` and `hiresTemp` must not share a spatial file. Two parent writers with no realm overwrite `latest.json` and the spatial file. Map layers have to read both `latest.json` and `latest_hires-temp.json`. Time-series files are per variable.
 
 Only `--group hiresTemp` on a domain with a sibling downloads `hhl.om`. EPS feeds publish HHL for the lowest levels only, and a surface job must not wait on HHL. `--group hiresTemp` on any other domain is rejected.
 
@@ -22,26 +21,26 @@ Only `--group hiresTemp` on a domain with a sibling downloads `hhl.om`. EPS feed
 
 ## Cron (`/etc/cron.d/openmeteo-api`)
 
-These lines are installed. EU and D2 `hiresTemp` and `heidiVars` run on the parent native domains. Minutes stay off the D2 surface and pressure jobs, which already run at minute 44. The regular-grid `icon-d2` and `icon-eu` lines stay commented through the rollback (30 Nov 2026). EU is not capped. A run at 00, 06, 12, or 18 goes to 120 h, and the hours in between go to 30 h. Global runs at 00, 06, 12, and 18, so its jobs are the 02, 08, 14, 20 slot. `--max-forecast-hour 24` keeps a lead hour when it is less than or equal to 24, so hour 24 is included. Without that cap, global 06 and 18 go to 120 h and 00 and 12 go to 180 h.
+These lines are the native schedule. The test host runs D2 `hiresTemp` and `surface`. EU and global native lines stay commented. Minutes stay off the D2 surface and pressure jobs, which already run at minute 44. The regular-grid `icon-d2` and `icon-eu` lines stay commented through the rollback (30 Nov 2026). EU is not capped. A run at 00, 06, 12, or 18 goes to 120 h, and the hours in between go to 30 h. Global runs at 00, 06, 12, and 18, so its jobs are the 02, 08, 14, 20 slot. `--max-forecast-hour 24` keeps a lead hour when it is less than or equal to 24, so hour 24 is included. Without that cap, global 06 and 18 go to 120 h and 00 and 12 go to 180 h. `icon-native` passes `--skip-regridding` so the surface download stays off regular-grid `dwd_icon`.
 
 ```cron
 # icon-d2 native column -> sibling latest_hires-temp.json
 53 0,3,6,9,12,15,18,21 * * * openmeteo-api nice -15 /usr/local/bin/openmeteo-api download icon-d2-native --group hiresTemp --concurrent 12 > $DATA_DIRECTORY/log/icon-d2_model-level.log 2>&1 || cat $DATA_DIRECTORY/log/icon-d2_model-level.log
 
-# icon-d2 native heidiVars -> parent
-45 0,3,6,9,12,15,18,21 * * * openmeteo-api nice -15 /usr/local/bin/openmeteo-api download icon-d2-native --group heidiVars --concurrent 12 > $DATA_DIRECTORY/log/icon-d2_heidivars.log 2>&1 || cat $DATA_DIRECTORY/log/icon-d2_heidivars.log
+# icon-d2 native surface -> parent latest.json
+45 0,3,6,9,12,15,18,21 * * * openmeteo-api nice -15 /usr/local/bin/openmeteo-api download icon-d2-native --group surface --concurrent 12 > $DATA_DIRECTORY/log/icon-d2_surface.log 2>&1 || cat $DATA_DIRECTORY/log/icon-d2_surface.log
 
 # icon-eu native column -> sibling latest_hires-temp.json
 48 2,5,8,11,14,17,20,23 * * * openmeteo-api nice -17 /usr/local/bin/openmeteo-api download icon-eu-native --group hiresTemp --concurrent 12 > $DATA_DIRECTORY/log/icon-eu_model-level.log 2>&1 || cat $DATA_DIRECTORY/log/icon-eu_model-level.log
 
-# icon-eu native heidiVars -> parent
-40 2,5,8,11,14,17,20,23 * * * openmeteo-api nice -17 /usr/local/bin/openmeteo-api download icon-eu-native --group heidiVars --concurrent 12 > $DATA_DIRECTORY/log/icon-eu_heidivars.log 2>&1 || cat $DATA_DIRECTORY/log/icon-eu_heidivars.log
+# icon-eu native surface -> parent latest.json
+40 2,5,8,11,14,17,20,23 * * * openmeteo-api nice -17 /usr/local/bin/openmeteo-api download icon-eu-native --group surface --concurrent 12 > $DATA_DIRECTORY/log/icon-eu_surface.log 2>&1 || cat $DATA_DIRECTORY/log/icon-eu_surface.log
 
 # icon global native column, first 24h -> sibling latest_hires-temp.json
 41 2,8,14,20 * * * openmeteo-api nice -19 /usr/local/bin/openmeteo-api download icon-native --group hiresTemp --max-forecast-hour 24 --concurrent 12 > $DATA_DIRECTORY/log/icon_model-level.log 2>&1 || cat $DATA_DIRECTORY/log/icon_model-level.log
 
-# icon global native heidiVars, first 24h -> parent
-36 2,8,14,20 * * * openmeteo-api nice -19 /usr/local/bin/openmeteo-api download icon-native --group heidiVars --max-forecast-hour 24 --concurrent 12 > $DATA_DIRECTORY/log/icon_heidivars.log 2>&1 || cat $DATA_DIRECTORY/log/icon_heidivars.log
+# icon global native surface, first 24h -> parent. --skip-regridding keeps this off dwd_icon.
+36 2,8,14,20 * * * openmeteo-api nice -19 /usr/local/bin/openmeteo-api download icon-native --group surface --skip-regridding --max-forecast-hour 24 --concurrent 12 > $DATA_DIRECTORY/log/icon_surface.log 2>&1 || cat $DATA_DIRECTORY/log/icon_surface.log
 ```
 
 An existing elevation file is left in place. Delete the parent and remapped `dwd_icon` HSURF files to regenerate the sea mask. `FR_LAKE` is added to `FR_LAND` before the sea test, so lakes are not stored as −999.
@@ -82,11 +81,9 @@ A full-level height is the mean of the enclosing half levels in `hhl.om`. AGL he
 
 Specific humidity is printed with five decimals. The SDK default of two remains for other uses of g/kg.
 
-## `--group heidiVars`
+## Surface download
 
-Thirty-one surface fields on the parent, the same list on every domain. A field DWD does not publish is skipped when `getVarAndLevel` returns nil (`CEILING` and several others are missing on global; `VIS` is not in the v1 feed; `LPI` is D2 only).
-
-`model_elevation` and `surface_pressure_model` are excluded from `--group all`, `surface`, and `surfaceAndPressure`.
+`--group surface` is the parent single-level download. On a deterministic domain it includes `model_elevation`, `surface_pressure_model`, and `cloud_base`. `--group all` and `--group surfaceAndPressure` include the same two orography fields. Ensemble runs of those three groups omit both orography fields. `cloud_base` is DWD `CEILING`, metres MSL, EU and D2 only. Global `getVarAndLevel` returns nil for it, and for `VIS`.
 
 | Name | Meaning |
 |---|---|
@@ -94,7 +91,7 @@ Thirty-one surface fields on the parent, the same list on every domain. A field 
 | `model_elevation` | unmasked HSURF, written every hour from the static raw file |
 | `cloud_base` | DWD `CEILING`, metres MSL, EU and D2 only |
 
-`surface_pressure` is still the elevation-reduced field. Dew point, wet bulb, and 10 m wind speed and direction stay derived.
+`surface_pressure` is still the elevation-reduced field. Dew point, wet bulb, and 10 m wind speed and direction stay derived. `model_elevation` is written on the parent only. A global native surface command without `--skip-regridding` also fills regular-grid `dwd_icon` for the other surface fields.
 
 ## Elevation correction
 
@@ -108,4 +105,4 @@ Model-level variables are not elevation-correctable.
 
 ## Tests
 
-`Tests/AppTests/IconHhlTests.swift` checks the native-grid HHL layout (`ny = 1`), the heidiVars and hiresTemp variable lists, logarithmic qv, and the out-of-range message. `Tests/AppTests/SiUnitTests.swift` checks the five-decimal specific humidity. `Tests/AppTests/IconLakeElevationTests.swift` checks `maskOpenSea` without GRIB: a lake with low `FR_LAND` keeps HSURF, the same cell becomes −999 when `FR_LAKE` is zero, and the cut is strictly below 0.5. `scripts/icon_model_level_regression.py` checks the live `https://open-meteo.wetterheidi.de` host: lowest full level near 10 m AGL, five-decimal qv, `wind_w` in m/s, and an out-of-range level reporting `1…N`. That host is the older lat-lon deployment, so temperatures at the same lat/lon will not match a native-grid server. Heights should.
+`Tests/AppTests/IconHhlTests.swift` checks the native-grid HHL layout (`ny = 1`), the hiresTemp variable list, deterministic-versus-ensemble membership of the orography fields, logarithmic qv, and the out-of-range message. `Tests/AppTests/SiUnitTests.swift` checks the five-decimal specific humidity. `Tests/AppTests/IconLakeElevationTests.swift` checks `maskOpenSea` without GRIB: a lake with low `FR_LAND` keeps HSURF, the same cell becomes −999 when `FR_LAKE` is zero, and the cut is strictly below 0.5. `scripts/icon_model_level_regression.py` checks the live `https://open-meteo.wetterheidi.de` host: lowest full level near 10 m AGL, five-decimal qv, `wind_w` in m/s, and an out-of-range level reporting `1…N`. That host is the older lat-lon deployment, so temperatures at the same lat/lon will not match a native-grid server. Heights should.

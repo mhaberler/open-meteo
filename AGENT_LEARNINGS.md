@@ -2,22 +2,31 @@
 
 Human-facing layout is in `MODELLEVELS.md`. This file is the decisions and traps that are easy to undo.
 
+## 2026-10-28 — model orography is part of the surface download
+
+- `--group heidiVars`, `heidiSurface`, and realm `"heidi"` are gone. ArgumentParser rejects `--group heidiVars`.
+- The installed parent job is `--group surface`. It writes parent `latest.json`. `model_elevation` and `surface_pressure_model` are in `surface`, `all`, and `surfaceAndPressure` when `countEnsembleMember == 1`. `ensembleOmitted` drops both when the count is greater than 1, so the `HSURF_raw` copy does not run on an ensemble.
+- `surface_pressure_model` stores the previous run, same as `pressure_msl`. It is still not elevation-correctable.
+- Two writers with realm nil still overwrite `latest.json` and the spatial file. Do not add a second parent surface job on the same run.
+- `icon-native --group surface` regrids onto `dwd_icon` unless the command passes `--skip-regridding`. The documented global line passes it. `model_elevation` is copied to the parent writer only.
+- The test D2 log is `icon-d2_surface.log`. The chart row is `icon-d2-next/surface`. Production lat-lon crons still run `heidiVars` on the other binary. Do not point those lines at this binary until it is the one installed there.
+
 ## 2026-10-16 — native ICON model levels on `redo-modellevels`
 
 Branch is a port onto `upstream-1.7.0` native grids (`65c6a804`). Do not rebase `modellevel-cand`. The live oracle is HTTP `https://open-meteo.wetterheidi.de`, which is ahead of local `modellevel-cand` tip `cbb1d375`. That host is regular lat-lon, so temperatures at the same lat/lon will not match a native server. Heights should, within 1 m.
 
 ### Placement the user settled
 
-- No third domain. Parent native domain holds surface, pressure levels, `heidiVars`, `hhl.om`, masked HSURF, and `HSURF_raw`. The existing `_native_model_level` sibling holds both the 80/120/180 m fields and the full column.
+- No third domain. Parent native domain holds the surface download, pressure levels, `hhl.om`, masked HSURF, and `HSURF_raw`. The existing `_native_model_level` sibling holds both the 80/120/180 m fields and the full column.
 - `--group modelLevel` keeps its 1.7.0 meaning: surface variables whose DWD category is `model-level` (u/v/t at 80, 120, 180 m). Store them. The user cancelled the idea of serving those names as a read of levels `N−2`/`N−3`/`N−4` and dropping the second store.
-- `heidiVars` has realm `"heidi"` on the parent. With realm nil it overwrote the surface job's `<time>.om` and `latest.json` for the same run (D2 surface :44, heidiVars :45).
+- Realm `"heidi"` is gone. Two writers with realm nil still overwrite `latest.json` and the spatial file.
 - Sibling realm for `modelLevel` stays nil, so the file is `latest.json`. `VariableGroup.realm` returns `"model-level"` for that group and is passed only to the parent writer. Pass `siblingRealm` (`"hires-temp"` for `hiresTemp`, otherwise nil) to the sibling writer. Two writers with realm nil overwrite `latest.json` and the spatial file.
 - Cron targets the parent (`icon-d2-native`, `icon-eu-native`, `icon-native`). The sibling CLI name rejects anything but `--group modelLevel` (`DownloadIconCommand`, the `modelLevelParent` guard).
 - `--max-forecast-hour` is an optional `Int` and keeps a step when `leadHours <=` the value, so 24 includes hour 24. Only the global cron lines pass it (`24`). Do not put `144` on EU. Uncapped lengths come from `getDownloadForecastSteps`: EU 120 h on 00/06/12/18 and 30 h on the side runs, global 120 h on 06/18 and 180 h on 00/12.
 - Diverted variables (`IconModelLevelVariable(rawValue:)` matches both the 80/120/180 names and `<var>_levelN`) go to the sibling and must return before the remapper. Copying them into regular `dwd_icon` was rejected. No column on EPS or `icon-d2-native-15min`.
 - `finalise()` writes nothing when a writer has zero handles, so an empty parent writer during a sibling-only group is safe.
 - `--update-meta` is gone. Upstream `#2241` writes `static/meta.json` for every time-series convert with `writeUpdateJson`, so a `hiresTemp` run no longer needs a flag to pass the old surface-variable allow-list. `static/meta.json` is still separate from `data_spatial/latest_*.json`. Realm does not replace it.
-- `convert` ignores its domain argument and groups handles by `handle.domain`. `hiresTemp` handles are the sibling, so that job advances the sibling meta. `heidiVars` advances the parent. A pressure-only ensemble download sets `writeUpdateJson` false so it does not replace the surface run's meta. `data_end_time` is exclusive: start of the last timestep plus `dtSeconds`. Deployed crons must drop `--update-meta`; ArgumentParser rejects the unknown flag.
+- `convert` ignores its domain argument and groups handles by `handle.domain`. `hiresTemp` handles are the sibling, so that job advances the sibling meta. The surface download advances the parent. A pressure-only ensemble download sets `writeUpdateJson` false so it does not replace the surface run's meta. `data_end_time` is exclusive: start of the last timestep plus `dtSeconds`. Deployed crons must drop `--update-meta`; ArgumentParser rejects the unknown flag.
 - Download deadline stays hard-coded: 2 h for D2, 5 h otherwise. The user dropped `--connections-per-host`, `--deadline-hours`, and putting the Curl URL on retry logs.
 
 ### Reader
@@ -42,8 +51,7 @@ Branch is a port onto `upstream-1.7.0` native grids (`65c6a804`). Do not rebase 
 
 ### Surface and static files
 
-- `heidiVars` is the 31-name `heidiSurface` set, the same list on every domain. `getVarAndLevel` returning nil is what skips unpublished fields. `heidiVarsOnly` is only `model_elevation` and `surface_pressure_model`, and those two are filtered out of `all`, `surface`, and `surfaceAndPressure`.
-- `VIS` is not in the DWD v1 feed, so `visibility.getVarAndLevel` is nil on every domain. Downloadable heidi counts are 25 global, 28 EU, 29 D2. The fork's 29/30 assumed VIS was published.
+- `model_elevation` and `surface_pressure_model` belong to deterministic `surface`, `all`, and `surfaceAndPressure`. `ensembleOmitted` keeps them off ensemble lists. `getVarAndLevel` returning nil still skips unpublished fields such as `VIS`.
 - `cloud_base` is DWD `CEILING`, EU and D2 only. Global `clc` levels below `cloudCoverMinimumModelLevel` (39 global, 1 otherwise) are skipped for every hour inside `skipHour`.
 - `model_elevation` returns nil from `getVarAndLevel` and is written each hour from `HSURF_raw`. `surface_pressure_model` is `PS` in hPa. On EPS domains the early switch hits `default: return nil` before the main mapping, which keeps it from downloading `PS` a second time under `pressure_msl`.
 - `convertSurfaceElevation` returns when the masked file and `HSURF_raw` already exist. It does not delete them. The `FR_LAKE` mask applies only after those files are removed, on the parent and the remapped `dwd_icon` copy.
@@ -56,5 +64,5 @@ Branch is a port onto `upstream-1.7.0` native grids (`65c6a804`). Do not rebase 
 - `swift test --filter 'IconHhlTests|SiUnitTests|IconLakeElevationTests'` is the local check. `scripts/icon_model_level_regression.py` is the host check. `--host` and `--model icon_d2=dwd_icon_d2_native` point it at a native server. HHL fixtures in tests are `ny = 1`.
 - `#expect(optionalFloat == (22000 + 19402) / 2)` fails although the arithmetic is exact: against `Float?` the literal expression is not typed as `Float`. Write the expected value as `Float(20701)`.
 - Compare a native server to wetterheidi with `cell_selection=nearest`, `start_date`/`end_date` (those reject `forecast_days`), and `windspeed_unit=ms`. Local model name is `dwd_icon_d2_native`; the oracle is `icon_d2`. Pin `elevation=` for a tight temperature check. wetterheidi parses `model_elevation` and `_levelN` on `/v1/dwd-icon`. `snowfall_convective_water_equivalent` is not a `VariableHourly` case; one unknown name makes the whole hourly list HTTP 400. This host sets `DEM_DOWNSCALING=false`, so the returned elevation is the model cell.
-- The ingest chart tails a log from the end when the file already exists at startup, because backfill has read it. A log created after startup, such as `/open-meteo-next/log/icon-d2_heidivars.log`, has to be read from the first byte or that finished run never becomes a bar.
+- The ingest chart tails a log from the end when the file already exists at startup, because backfill has read it. A log created after startup, such as `/open-meteo-next/log/icon-d2_surface.log`, has to be read from the first byte or that finished run never becomes a bar.
 - A missing native domain currently answers HTTP 500 `Something went wrong.`, not a clean missing-domain error. The 2026-10-16 note that EU and D2 had both finished was early: only `dwd_icon_d2_native` and its sibling were on disk, both meta files on the 21:00 UTC run. Do not treat one finished log as both domains.

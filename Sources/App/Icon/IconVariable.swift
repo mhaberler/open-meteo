@@ -207,7 +207,7 @@ enum IconSurfaceVariable: String, CaseIterable, GenericVariableMixable, Sendable
         switch self {
         case .temperature_2m, .relative_humidity_2m: return true
         case .showers, .precipitation, .snowfall_water_equivalent: return true
-        case .pressure_msl: return true
+        case .pressure_msl, .surface_pressure_model: return true
         case .cloud_cover: return true
         case .diffuse_radiation, .direct_radiation: return true
         case .wind_gusts_10m, .wind_u_component_10m, .wind_v_component_10m: return true
