@@ -67,3 +67,22 @@ python3 scripts/icon_d2_native_regression.py --surface
 ```
 
 `--candidate`, `--oracle`, `--report`, and `--surface` override the defaults.
+
+## Surface three-way
+
+`scripts/icon_d2_surface_regression.py` compares the heidi surface names only. It does not request the column. The public host is `https://api.open-meteo.com` model `icon_d2`. The oracle and the candidate are the same hosts as above.
+
+The public request omits `model_elevation` and `surface_pressure_model`. Either name makes that host reject the whole hourly list. Those two names are compared only between the oracle and the candidate.
+
+Public against the oracle must agree within one stored step: temperature and soil temperature 0.1 K, wind 0.2 m/s, `pressure_msl` 0.2 hPa, precipitation, rain, showers, and snowfall water equivalent 0.2 mm, cloud cover and relative humidity 1, `weather_code` 0, `cloud_base`, `freezing_level_height`, `snowfall_height`, and the convective cloud heights 20 m, CAPE and CIN 10, `lightning_potential` 0.2. `visibility` is a note when a host is all null, and it is not a numeric failure.
+
+The candidate against the oracle uses the gates in the comparison table above. Names without a gate, including `model_elevation`, are printed and do not fail. The candidate lake check is the same: `elevation` equals `model_elevation` within 0.5 m and both are above 50 m. The candidate is not compared with the public API.
+
+Each run overwrites `/var/www/vpsmon/regression/surface.html` and prints `https://vpsmon.meteo.mah.priv.at/regression/surface.html`.
+
+```bash
+python3 scripts/icon_d2_surface_regression.py
+python3 scripts/icon_d2_surface_regression.py --skip-public
+```
+
+`--skip-public` compares only the oracle and the candidate. `--public`, `--oracle`, `--candidate`, and `--report` override the defaults.
