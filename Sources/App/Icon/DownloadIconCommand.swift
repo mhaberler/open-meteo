@@ -1,3 +1,4 @@
+import OmFileIO
 import Foundation
 import Vapor
 import OmFileFormat
@@ -119,6 +120,9 @@ struct DownloadIconCommand: AsyncCommand {
         @Option(name: "upload-s3-bucket", help: "Upload open-meteo database to an S3 bucket after processing")
         var uploadS3Bucket: String?
 
+        @Option(name: "upload-s3-rolling-bucket", help: "Upload generated products, including ensemble rolling.om files but excluding spatial files, to these S3 buckets.")
+        var uploadS3RollingBucket: String?
+
         @Flag(name: "upload-s3-only-probabilities", help: "Only upload probabilities files to S3")
         var uploadS3OnlyProbabilities: Bool
         
@@ -181,7 +185,7 @@ struct DownloadIconCommand: AsyncCommand {
      An existing elevation file is left untouched; delete it to regenerate the mask.
      Unmasked HSURF is written separately as HSURF_raw.
      */
-    func convertSurfaceElevation(application: Application, outputs: IconDownloadOutputs, remapper: IconRemapper?, run: Timestamp, uploadS3Bucket: String?) async throws {
+    func convertSurfaceElevation(application: Application, outputs: IconDownloadOutputs, remapper: IconRemapper?, run: Timestamp, uploadQueues: [S3UploadQueue]) async throws {
         let logger = application.logger
         let feedStatic = outputs.nativeDomain.staticResourceDomain.downloadDomain
         let needsPrimary = !FileManager.default.fileExists(atPath: outputs.primary.surfaceElevationFileOm.getFilePath())
@@ -210,7 +214,7 @@ struct DownloadIconCommand: AsyncCommand {
         let rawHsurf = surface.data.data
         // Another job may have written it during the download. `writeOmFile` traps on an existing file.
         if needsRaw && !FileManager.default.fileExists(atPath: outputs.primary.modelElevationRawFileOm.getFilePath()) {
-            try await rawHsurf.writeStaticOmFile(file: outputs.primary.modelElevationRawFileOm, grid: outputs.primary.grid, application: application, uploadS3Bucket: uploadS3Bucket)
+            try await rawHsurf.writeStaticOmFile(file: outputs.primary.modelElevationRawFileOm, grid: outputs.primary.grid, application: application, uploadQueues: uploadQueues)
         }
         guard needsPrimary || missingRemapped != nil else {
             return
@@ -231,7 +235,7 @@ struct DownloadIconCommand: AsyncCommand {
         hsurf = Self.maskOpenSea(hsurf: hsurf, landFraction: landFraction, lakeFraction: lakeFraction)
 
         if needsPrimary {
-            try await hsurf.writeStaticOmFile(file: outputs.primary.surfaceElevationFileOm, grid: outputs.primary.grid, application: application, uploadS3Bucket: uploadS3Bucket)
+            try await hsurf.writeStaticOmFile(file: outputs.primary.surfaceElevationFileOm, grid: outputs.primary.grid, application: application, uploadQueues: uploadQueues)
         }
         if let remappedDomain = missingRemapped {
             guard let remapper else {
@@ -241,7 +245,7 @@ struct DownloadIconCommand: AsyncCommand {
                 file: remappedDomain.surfaceElevationFileOm,
                 grid: remappedDomain.grid,
                 application: application,
-                uploadS3Bucket: uploadS3Bucket
+                uploadQueues: uploadQueues
             )
         }
     }
@@ -250,7 +254,7 @@ struct DownloadIconCommand: AsyncCommand {
     /// Idempotent: an existing `hhl.om` is left in place.
     /// Only `--group hiresTemp` on a domain with a model-level sibling writes it. EPS feeds publish
     /// HHL for the lowest levels only, and a surface job must not depend on this download.
-    func convertHhlHeights(application: Application, outputs: IconDownloadOutputs, group: VariableGroup, run: Timestamp, uploadS3Bucket: String?) async throws {
+    func convertHhlHeights(application: Application, outputs: IconDownloadOutputs, group: VariableGroup, run: Timestamp, uploadQueues: [S3UploadQueue]) async throws {
         guard group == .hiresTemp, outputs.modelLevel != nil else {
             return
         }
@@ -290,15 +294,17 @@ struct DownloadIconCommand: AsyncCommand {
             return
         }
         try stacked.writeOmFile(file: path, dimensions: [ny, nx, nlev], chunks: [chunkY, chunkX, nlev], compression: .pfor_delta2d, scalefactor: 1)
-        for queue in await application.s3SyncManager.getQueues(bucketsOpt: uploadS3Bucket) ?? [] {
+        guard !uploadQueues.isEmpty else { return }
+        let handle = try FileHandle.openFileReading(file: path)
+        for queue in uploadQueues {
             let uploads = queue.startMultiPartUploads()
-            await uploads.uploadMultipart(file: path, objectName: hhlFile.getRelativeFilePathWithData(), lastModified: .now())
+            await uploads.uploadMultipart(data: handle, objectName: hhlFile.getRelativeFilePathWithData(), lastModified: .now())
             await queue.finishMultiPartUploads(uploads)
         }
     }
 
     /// Download native DWD v1 fields and adapt them to the selected storage outputs.
-    func downloadIcon(application: Application, outputs: IconDownloadOutputs, remapper: IconRemapper?, run: Timestamp, variables: [any IconVariableDownloadable], concurrent: Int, uploadS3Bucket: String?, realm: String?, siblingRealm: String?, maxForecastHour: Int?) async throws -> (handles: [GenericVariableHandle], handles15minIconD2: [GenericVariableHandle]) {
+    func downloadIcon(application: Application, outputs: IconDownloadOutputs, remapper: IconRemapper?, run: Timestamp, variables: [any IconVariableDownloadable], concurrent: Int, uploadQueues: [S3UploadQueue], realm: String?, siblingRealm: String?, maxForecastHour: Int?) async throws -> (handles: [GenericVariableHandle], handles15minIconD2: [GenericVariableHandle]) {
         let logger = application.logger
         let feed = outputs.downloadDomain
         let remappedDomain = outputs.remapped
@@ -653,14 +659,14 @@ struct DownloadIconCommand: AsyncCommand {
 
             let completed = i == timestamps.count - 1
             let validTimes = Array(timestamps[0...i])
-            let handles = try await writer.finalise(application: application, completed: completed, validTimes: validTimes, uploadS3Bucket: uploadS3Bucket)
-                + (modelLevelWriter?.finalise(application: application, completed: completed, validTimes: validTimes, uploadS3Bucket: uploadS3Bucket) ?? [])
-                + (remappedWriter?.finalise(application: application, completed: completed, validTimes: validTimes, uploadS3Bucket: uploadS3Bucket) ?? [])
-                + (writerProbabilities?.finalise(application: application, completed: completed, validTimes: validTimes, uploadS3Bucket: uploadS3Bucket) ?? [])
+            let handles = try await writer.finalise(application: application, completed: completed, validTimes: validTimes, uploadQueues: uploadQueues)
+                + (modelLevelWriter?.finalise(application: application, completed: completed, validTimes: validTimes, uploadQueues: uploadQueues) ?? [])
+                + (remappedWriter?.finalise(application: application, completed: completed, validTimes: validTimes, uploadQueues: uploadQueues) ?? [])
+                + (writerProbabilities?.finalise(application: application, completed: completed, validTimes: validTimes, uploadQueues: uploadQueues) ?? [])
             
             let handles15min = try await finaliseQuarterHourly(application: application, writer: writer15Min,
                 lastTime: lastQuarterHourlyTime,
-                validTimes: &quarterHourlyValidTimes, uploadS3Bucket: uploadS3Bucket)
+                validTimes: &quarterHourlyValidTimes, uploadQueues: uploadQueues)
             return (handles, handles15min)
         }
         
@@ -669,18 +675,19 @@ struct DownloadIconCommand: AsyncCommand {
     }
 
     /// Publish each cadence independently; D2's quarter-hour output ends before its hourly output.
-    func finaliseQuarterHourly(application: Application, writer: OmSpatialMultistepWriter?, lastTime: Timestamp?, validTimes: inout Set<Timestamp>, uploadS3Bucket: String?) async throws -> [GenericVariableHandle] {
+    func finaliseQuarterHourly(application: Application, writer: OmSpatialMultistepWriter?, lastTime: Timestamp?, validTimes: inout Set<Timestamp>, uploadQueues: [S3UploadQueue]) async throws -> [GenericVariableHandle] {
         guard let writer else { return [] }
         let writtenTimes = await writer.writer.map { $0.time }
         guard !writtenTimes.isEmpty else { return [] }
         let publishedTimes = validTimes.union(writtenTimes)
         let completed = lastTime.map { writtenTimes.contains($0) } ?? false
-        let handles = try await writer.finalise(application: application, completed: completed, validTimes: publishedTimes.sorted(), uploadS3Bucket: uploadS3Bucket)
+        let handles = try await writer.finalise(application: application, completed: completed, validTimes: publishedTimes.sorted(), uploadQueues: uploadQueues)
         validTimes = publishedTimes
         return handles
     }
 
     func run(using context: CommandContext, signature: Signature) async throws {
+        let resolvedUploadQueues = await context.application.s3SyncManager.getQueues(bucketsOpt: signature.uploadS3Bucket, rollingBucketsOpt: signature.uploadS3RollingBucket, onlyProbabilityTimeSeries: signature.uploadS3OnlyProbabilities)
         let start = DispatchTime.now()
         let requestedNativeDomain = IconNativeDomains(rawValue: signature.domain)
             ?? (signature.domain == IconDomains.icon.rawValue ? .iconNative : nil)
@@ -726,7 +733,7 @@ struct DownloadIconCommand: AsyncCommand {
         let writeUpdateJson = !isPressureOnlyEnsembleDownload
         try await nativeDomain.prepareNativeGrid(
             application: context.application,
-            uploadS3Bucket: signature.uploadS3Bucket
+            uploadQueues: resolvedUploadQueues
         )
         let outputs = try await IconDownloadOutputs(nativeDomain, skipRegridding: signature.skipRegridding)
 
@@ -738,16 +745,16 @@ struct DownloadIconCommand: AsyncCommand {
         } else {
             remapper = nil
         }
-        try await convertSurfaceElevation(application: context.application, outputs: outputs, remapper: remapper, run: run, uploadS3Bucket: signature.uploadS3Bucket)
-        try await convertHhlHeights(application: context.application, outputs: outputs, group: group, run: run, uploadS3Bucket: signature.uploadS3Bucket)
+        try await convertSurfaceElevation(application: context.application, outputs: outputs, remapper: remapper, run: run, uploadQueues: resolvedUploadQueues)
+        try await convertHhlHeights(application: context.application, outputs: outputs, group: group, run: run, uploadQueues: resolvedUploadQueues)
 
-        let (handles, handles15minIconD2) = try await downloadIcon(application: context.application, outputs: outputs, remapper: remapper, run: run, variables: variables, concurrent: nConcurrent, uploadS3Bucket: signature.uploadS3Bucket, realm: group.realm, siblingRealm: group.siblingRealm, maxForecastHour: signature.maxForecastHour)
+        let (handles, handles15minIconD2) = try await downloadIcon(application: context.application, outputs: outputs, remapper: remapper, run: run, variables: variables, concurrent: nConcurrent, uploadQueues: resolvedUploadQueues, realm: group.realm, siblingRealm: group.siblingRealm, maxForecastHour: signature.maxForecastHour)
 
         if let fifteenMinuteDomain = outputs.fifteenMinute {
             // ICON-D2 downloads 15min data as well
-            try await GenericVariableHandle.convert(application: context.application, domain: fifteenMinuteDomain, createNetcdf: signature.createNetcdf, run: run, handles: handles15minIconD2, concurrent: nConcurrent, writeUpdateJson: writeUpdateJson, uploadS3Bucket: signature.uploadS3Bucket, uploadS3OnlyProbabilities: signature.uploadS3OnlyProbabilities, generateFullRun: generateFullRun, generateTimeSeries: !signature.skipTimeseries)
+            try await GenericVariableHandle.convert(application: context.application, domain: fifteenMinuteDomain, createNetcdf: signature.createNetcdf, run: run, handles: handles15minIconD2, concurrent: nConcurrent, writeUpdateJson: writeUpdateJson, uploadQueues: resolvedUploadQueues, generateFullRun: generateFullRun, generateTimeSeries: !signature.skipTimeseries)
         }
-        try await GenericVariableHandle.convert(application: context.application, domain: outputs.primary, createNetcdf: signature.createNetcdf, run: run, handles: handles, concurrent: nConcurrent, writeUpdateJson: writeUpdateJson, uploadS3Bucket: signature.uploadS3Bucket, uploadS3OnlyProbabilities: signature.uploadS3OnlyProbabilities, generateFullRun: generateFullRun, generateTimeSeries: !signature.skipTimeseries)
+        try await GenericVariableHandle.convert(application: context.application, domain: outputs.primary, createNetcdf: signature.createNetcdf, run: run, handles: handles, concurrent: nConcurrent, writeUpdateJson: writeUpdateJson, uploadQueues: resolvedUploadQueues, generateFullRun: generateFullRun, generateTimeSeries: !signature.skipTimeseries)
 
         logger.info("Finished in \(start.timeElapsedPretty())")
     }
