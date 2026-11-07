@@ -17,13 +17,13 @@ The candidate runs with `DEM_DOWNSCALING=false`, so the returned elevation is th
 
 ## What is allowed to differ
 
-The native nearest cell and the lat-lon nearest cell are different points. Elevations are recorded and are not required to match. Starnberger See (47.86N, 11.29E) is the known case: native about 614 m, wetterheidi about 584 m. A 30 m offset is about 3.5 hPa of surface pressure, so the pressure gates below can fail on that point even when both sides are a correct reading of their own cell.
+The native nearest cell and the lat-lon nearest cell are different points. Elevations are recorded and are not required to match. The lake points are places where both nearest cells share the lake HSURF, so a shoreline cell does not trip the pressure gates. Starnberger See at 47.86N, 11.29E is that shoreline case (native 614 m, wetterheidi 584 m, about 3.5 hPa) and is not a test point.
 
 Heights above ground are a property of the column. The lowest full level stays near 10 m AGL on both hosts.
 
 ## Points
 
-Munich 48.14, 11.58 and Zugspitze 47.42, 10.98 are ordinary land points. Starnberger See 47.86, 11.29, Ammersee 47.99, 11.12, and Chiemsee 47.88, 12.45 are the lake mask. On the candidate only, `elevation` must equal `model_elevation` within 0.5 m and both must be above 50 m. The oracle elevation is recorded.
+Munich 48.14, 11.58 and Zugspitze 47.42, 10.98 are ordinary land points. Starnberger See 47.88, 11.31, Ammersee 47.99, 11.12, and Chiemsee 47.88, 12.45 are the lake mask. On the candidate only, `elevation` must equal `model_elevation` within 0.5 m and both must be above 50 m. The oracle elevation is recorded.
 
 ## Names
 

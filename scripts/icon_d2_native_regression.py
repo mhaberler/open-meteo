@@ -31,7 +31,7 @@ REPORT_URL = "https://vpsmon.meteo.mah.priv.at/regression/"
 POINTS = [
     {"name": "Munich", "latitude": 48.14, "longitude": 11.58, "lake": False},
     {"name": "Zugspitze", "latitude": 47.42, "longitude": 10.98, "lake": False},
-    {"name": "Starnberger See", "latitude": 47.86, "longitude": 11.29, "lake": True},
+    {"name": "Starnberger See", "latitude": 47.88, "longitude": 11.31, "lake": True},
     {"name": "Ammersee", "latitude": 47.99, "longitude": 11.12, "lake": True},
     {"name": "Chiemsee", "latitude": 47.88, "longitude": 12.45, "lake": True},
 ]
