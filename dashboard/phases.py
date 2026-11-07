@@ -41,7 +41,7 @@ JOBS: list[Job] = [
     Job("icon-eu_model-level.log", "icon-eu", "model-level", LOG_DIR),
     Job("icon-d2_heidivars.log", "icon-d2", "heidiVars", LOG_DIR),
     Job("icon-d2_model-level.log", "icon-d2", "model-level", LOG_DIR),
-    Job("icon-d2_heidivars.log", "icon-d2-next", "heidiVars", NEXT_LOG_DIR),
+    Job("icon-d2_surface.log", "icon-d2-next", "surface", NEXT_LOG_DIR),
     Job("icon-d2_model-level.log", "icon-d2-next", "model-level", NEXT_LOG_DIR),
     Job("icon-eu_heidivars.log", "icon-eu-next", "heidiVars", NEXT_LOG_DIR),
     Job("icon-eu_model-level.log", "icon-eu-next", "model-level", NEXT_LOG_DIR),
