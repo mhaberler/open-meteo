@@ -4,8 +4,7 @@
 The public API and wetterheidi are both regular lat-lon icon_d2. A shared
 name must agree within one stored step. The native host is gated against
 wetterheidi with the looser gates from the column regression. The native
-host is not compared with the public API. Pass `--skip-public` to compare
-only the oracle and the candidate.
+host is not compared with the public API.
 
 model_elevation and surface_pressure_model are omitted from the public
 request: either name makes that host reject the whole hourly list. They
@@ -29,7 +28,7 @@ from datetime import datetime, timezone
 PUBLIC = "https://api.open-meteo.com"
 ORACLE = "https://open-meteo.wetterheidi.de"
 CANDIDATE = "https://open-meteo-next.mah.priv.at"
-PUBLIC_MODEL = "icon_d2"
+PUBLIC_MODEL = "dwd_icon_d2_native"
 ORACLE_MODEL = "icon_d2"
 CANDIDATE_MODEL = "dwd_icon_d2_native"
 REPORT_PATH = "/var/www/vpsmon/regression/surface.html"
@@ -278,7 +277,8 @@ td, th {{ border: 1px solid #ccc; padding: 0.3rem 0.6rem; text-align: left; }}
 <body>
 <h1 class="{status}">ICON-D2 surface regression: {status}</h1>
 <p>Generated {html.escape(generated["at"])}</p>
-<p>{public_line}Oracle {html.escape(ORACLE)} model {html.escape(ORACLE_MODEL)}<br>
+<p>Public {html.escape(PUBLIC)} model {html.escape(PUBLIC_MODEL)}<br>
+Oracle {html.escape(ORACLE)} model {html.escape(ORACLE_MODEL)}<br>
 Candidate {html.escape(CANDIDATE)} model {html.escape(CANDIDATE_MODEL)}</p>
 <h2>Shared hours</h2>
 <ul>{hours}</ul>
@@ -293,7 +293,7 @@ Candidate {html.escape(CANDIDATE)} model {html.escape(CANDIDATE_MODEL)}</p>
 <ul>{note_rows}</ul>
 <h2>Max absolute differences</h2>
 <table>
-<tr><th>Place</th><th>Variable</th>{public_header}<th>Candidate vs oracle</th><th>Gate</th><th></th></tr>
+<tr><th>Place</th><th>Variable</th><th>Public vs oracle</th><th>Gate</th><th></th><th>Candidate vs oracle</th><th>Gate</th><th></th></tr>
 {diff_rows}
 </table>
 </body>
@@ -309,9 +309,7 @@ def main():
     parser.add_argument("--oracle", default=ORACLE)
     parser.add_argument("--candidate", default=CANDIDATE)
     parser.add_argument("--report", default=REPORT_PATH)
-    parser.add_argument("--skip-public", action="store_true", help="Compare only the oracle and the candidate")
     args = parser.parse_args()
-    include_public = not args.skip_public
 
     failures = []
     notes = []
@@ -323,20 +321,17 @@ def main():
     for point in POINTS:
         label = point["name"]
         print(label)
-        pub_status, pub_body, pub_url = (None, {}, None)
-        if include_public:
-            pub_status, pub_body, pub_url = query(args.public, PUBLIC_MODEL, point, asked_public)
-            print(" ", pub_status, pub_url)
+        pub_status, pub_body, pub_url = query(args.public, PUBLIC_MODEL, point, asked_public)
         ora_status, ora_body, ora_url = query(args.oracle, ORACLE_MODEL, point, SURFACE)
         cand_status, cand_body, cand_url = query(args.candidate, CANDIDATE_MODEL, point, SURFACE)
+        print(" ", pub_status, pub_url)
         print(" ", ora_status, ora_url)
         print(" ", cand_status, cand_url)
-        hosts = [
+        hosts = (
+            ("public", pub_status, pub_body, asked_public),
             ("oracle", ora_status, ora_body, SURFACE),
             ("candidate", cand_status, cand_body, SURFACE),
-        ]
-        if include_public:
-            hosts.insert(0, ("public", pub_status, pub_body, asked_public))
+        )
         skipped = False
         for where, status, body, names in hosts:
             if status != 200 or not isinstance(body.get("hourly"), dict):
@@ -346,11 +341,10 @@ def main():
         if skipped:
             continue
 
-        if include_public:
-            check_series(failures, notes, f"{label} public", asked_public, pub_body["hourly"])
-            check_units(failures, f"{label} public", pub_body.get("hourly_units", {}))
+        check_series(failures, notes, f"{label} public", asked_public, pub_body["hourly"])
         check_series(failures, notes, f"{label} oracle", SURFACE, ora_body["hourly"])
         check_series(failures, notes, f"{label} candidate", SURFACE, cand_body["hourly"])
+        check_units(failures, f"{label} public", pub_body.get("hourly_units", {}))
         check_units(failures, f"{label} oracle", ora_body.get("hourly_units", {}))
         check_units(failures, f"{label} candidate", cand_body.get("hourly_units", {}))
         if point["lake"]:
@@ -363,26 +357,23 @@ def main():
                 "oracle": ora_body.get("elevation"),
             })
 
-        pub_times = pub_body["hourly"].get("time", []) if include_public else []
+        pub_times = pub_body["hourly"].get("time", [])
         ora_times = ora_body["hourly"].get("time", [])
         cand_times = cand_body["hourly"].get("time", [])
-        public_common = shared_times(pub_times, ora_times) if include_public else []
+        public_common = shared_times(pub_times, ora_times)
         candidate_common = shared_times(cand_times, ora_times)
-        if include_public:
-            hour_lines.append(
-                f"{label}: public {', '.join(public_common) if public_common else 'none'}; "
-                f"candidate {', '.join(candidate_common) if candidate_common else 'none'}"
-            )
-            if not public_common:
-                fail(failures, f"{label} no overlapping public and oracle hours")
-        else:
-            hour_lines.append(f"{label}: {', '.join(candidate_common) if candidate_common else 'none'}")
+        hour_lines.append(
+            f"{label}: public {', '.join(public_common) if public_common else 'none'}; "
+            f"candidate {', '.join(candidate_common) if candidate_common else 'none'}"
+        )
+        if not public_common:
+            fail(failures, f"{label} no overlapping public and oracle hours")
         if not candidate_common:
             fail(failures, f"{label} no overlapping candidate and oracle hours")
 
         for name in SURFACE:
             public_diff, public_gate_text, public_verdict = "", "", ""
-            if include_public and name not in PUBLIC_OMIT and public_common and name in pub_body["hourly"] and name in ora_body["hourly"]:
+            if name not in PUBLIC_OMIT and public_common and name in pub_body["hourly"] and name in ora_body["hourly"]:
                 public_diff, public_gate_text, public_verdict = compare(
                     failures, f"{label} public", name,
                     pub_times, pub_body["hourly"][name],
@@ -413,7 +404,7 @@ def main():
         render(args.report, ok, failures, notes, rows, lakes, {
             "at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "hours": hour_lines,
-        }, include_public)
+        }, True)
     except OSError as error:
         print(f"FAIL could not write {args.report}: {error}", file=sys.stderr)
         return 1
