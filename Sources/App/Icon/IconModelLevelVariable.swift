@@ -51,6 +51,24 @@ enum IconModelLevelVariableType: String, CaseIterable, Sendable {
         default: return false
         }
     }
+
+    /// `models=icon_d2` mixes the 15-minute reader in and asks it first. That domain has no qr/qs/qg files.
+    enum HydrometeorAvailability: Equatable {
+        case stored
+        case absentOnFifteenMinute
+        case notPublished
+    }
+
+    func hydrometeorAvailability(domain: IconDomains, level: Int) -> HydrometeorAvailability {
+        guard isPrecipitatingHydrometeor, Self.iconD2HydrometeorLevels.contains(level) else {
+            return .notPublished
+        }
+        switch domain {
+        case .iconD2: return .stored
+        case .iconD2_15min: return .absentOnFifteenMinute
+        default: return .notPublished
+        }
+    }
 }
 
 /// A variable on a native ICON model full level, named `<variable>_level<N>`

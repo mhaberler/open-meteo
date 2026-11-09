@@ -205,7 +205,7 @@ Eight fields are stored on every full level. Vertical wind is stored on half lev
 
 `cloud_cover` on global ICON is published only for levels 39…120 (82 of 120). Levels 1…38 are skipped before download. icon-eu and icon-d2 publish `clc` on every full level.
 
-`rain_water`, `snow_water`, and `graupel_water` are specific rain, snow, and graupel content. ICON-D2 stores them on full levels 63…65 only, with the same logarithmic g/kg packing as `cloud_water`. Icon, icon-eu, the ensembles, the 15-minute files, and the native grid do not download them. A request outside that set is rejected instead of returning a missing file.
+`rain_water`, `snow_water`, and `graupel_water` are specific rain, snow, and graupel content. ICON-D2 stores them on full levels 63…65 only, with the same logarithmic g/kg packing as `cloud_water`. Icon, icon-eu, the ensembles, the 15-minute files, and the native grid do not download them. A request outside that set is rejected instead of returning a missing file. `models=icon_d2` also opens the 15-minute reader, which returns missing values for these names so the hourly series is kept.
 
 | domain | full levels | half levels (`wind_w`) | fields written |
 |---|---:|---:|---:|

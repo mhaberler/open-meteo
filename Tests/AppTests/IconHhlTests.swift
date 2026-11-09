@@ -200,6 +200,14 @@ import OmFileFormat
         #expect(msg.contains("dwd_icon"))
     }
 
+    /// `models=icon_d2` asks the 15-minute reader first. It has no files, so the hourly series must survive.
+    @Test func hydrometeorOnFifteenMinuteReaderIsAbsent() {
+        #expect(IconModelLevelVariableType.rain_water.hydrometeorAvailability(domain: .iconD2, level: 65) == .stored)
+        #expect(IconModelLevelVariableType.snow_water.hydrometeorAvailability(domain: .iconD2_15min, level: 63) == .absentOnFifteenMinute)
+        #expect(IconModelLevelVariableType.graupel_water.hydrometeorAvailability(domain: .iconD2_15min, level: 60) == .notPublished)
+        #expect(IconModelLevelVariableType.rain_water.hydrometeorAvailability(domain: .iconEu, level: 65) == .notPublished)
+    }
+
     /// qr/qs/qg outside icon-d2 levels 63…65 name the variable and the published range.
     @Test func hydrometeorNotPublishedErrorIsDescriptive() {
         let msg = "\(IconModelLevelError.hydrometeorNotPublished(variable: "rain_water", level: 60, domain: "icon-d2"))"

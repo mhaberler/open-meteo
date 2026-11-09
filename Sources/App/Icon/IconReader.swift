@@ -47,13 +47,20 @@ struct IconReader: GenericReaderDerived, GenericReaderProtocol {
             guard modelLevel.level >= 1, modelLevel.level <= nLevels else {
                 throw IconModelLevelError.levelOutOfRange(level: modelLevel.level, max: nLevels, domain: reader.domain.rawValue)
             }
-            if modelLevel.variable.isPrecipitatingHydrometeor,
-               reader.domain != .iconD2 || !IconModelLevelVariableType.iconD2HydrometeorLevels.contains(modelLevel.level) {
-                throw IconModelLevelError.hydrometeorNotPublished(
-                    variable: modelLevel.variable.rawValue,
-                    level: modelLevel.level,
-                    domain: reader.domain.rawValue
-                )
+            if modelLevel.variable.isPrecipitatingHydrometeor {
+                switch modelLevel.variable.hydrometeorAvailability(domain: reader.domain, level: modelLevel.level) {
+                case .stored:
+                    break
+                case .absentOnFifteenMinute:
+                    // The mixer asks icon-d2-15min before the hourly domain. NaN keeps the hourly series.
+                    return DataAndUnit([Float](repeating: .nan, count: time.time.count), modelLevel.unit)
+                case .notPublished:
+                    throw IconModelLevelError.hydrometeorNotPublished(
+                        variable: modelLevel.variable.rawValue,
+                        level: modelLevel.level,
+                        domain: reader.domain.rawValue
+                    )
+                }
             }
         }
         if case let .height(modelLevel) = raw {
@@ -216,6 +223,10 @@ struct IconReader: GenericReaderDerived, GenericReaderProtocol {
     }
 
     func prefetchData(raw: IconVariable, time: TimerangeDtAndSettings) async throws {
+        if case let .height(ml) = raw, ml.variable.isPrecipitatingHydrometeor,
+           ml.variable.hydrometeorAvailability(domain: reader.domain, level: ml.level) != .stored {
+            return
+        }
         if case let .height(ml) = raw, ml.variable == .height || ml.variable == .height_agl {
             return
         }
