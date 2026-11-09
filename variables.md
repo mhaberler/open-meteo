@@ -199,16 +199,21 @@ Eight fields are stored on every full level. Vertical wind is stored on half lev
 | `cloud_ice_levelN` | `qi` | full | g/kg |
 | `cloud_cover_levelN` | `clc` | full | % |
 | `wind_w_levelN` | `w` | half | m/s |
+| `rain_water_levelN` | `qr` | icon-d2 full levels 63…65 | g/kg |
+| `snow_water_levelN` | `qs` | icon-d2 full levels 63…65 | g/kg |
+| `graupel_water_levelN` | `qg` | icon-d2 full levels 63…65 | g/kg |
 
 `cloud_cover` on global ICON is published only for levels 39…120 (82 of 120). Levels 1…38 are skipped before download. icon-eu and icon-d2 publish `clc` on every full level.
+
+`rain_water`, `snow_water`, and `graupel_water` are specific rain, snow, and graupel content. ICON-D2 stores them on full levels 63…65 only, with the same logarithmic g/kg packing as `cloud_water`. Icon, icon-eu, the ensembles, the 15-minute files, and the native grid do not download them. A request outside that set is rejected instead of returning a missing file.
 
 | domain | full levels | half levels (`wind_w`) | fields written |
 |---|---:|---:|---:|
 | icon | 120 | 121 | 1043 |
 | icon-eu | 74 | 75 | 667 |
-| icon-d2 | 65 | 66 | 586 |
+| icon-d2 | 65 | 66 | 595 |
 
-The icon count is `7 × 120 + 82 + 121`. icon-eu is `8 × 74 + 75`. icon-d2 is `8 × 65 + 66`.
+The icon count is `7 × 120 + 82 + 121`. icon-eu is `8 × 74 + 75`. icon-d2 is `8 × 65 + 66 + 9`. The added nine are rain, snow, and graupel water on full levels 63…65.
 
 These names are computed on read from the ingested fields and from `static/hhl.om`. They have no GRIB of their own:
 

@@ -485,6 +485,9 @@ enum ForecastModelLevelVariableType: String, GenericVariableMixable {
     case cloud_water
     case cloud_ice
     case cloud_cover
+    case rain_water
+    case snow_water
+    case graupel_water
 }
 
 struct ForecastModelLevelVariable: ModelLevelVariableRespresentable, GenericVariableMixable {

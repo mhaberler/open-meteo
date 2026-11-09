@@ -158,11 +158,13 @@ domain (−1); `model_elevation`, despite bypassing the generic per-hour GRIB
 path, is written like any other field and persists everywhere (HSURF is
 published on all three deterministic domains):
 
-| Domain | grid points | `hiresTemp` files (8×full + half) | `heidiVars` files | ratio |
+| Domain | grid points | `hiresTemp` files | `heidiVars` files | ratio |
 |---|---|---|---|---|
-| icon-d2 | 906,390 | 586 | 30 | **5.1%** |
+| icon-d2 | 906,390 | 595 | 30 | **5.0%** |
 | icon-eu | 904,689 | 667 | 29 | **4.3%** |
 | icon (global) | 4,148,639 | 1,081 | 25 | **2.3%** |
+
+icon and icon-eu are `8×full + half`. icon-d2 is that count plus nine hydrometeor fields: rain, snow, and graupel water on full levels 63–65.
 
 i.e. `heidiVars` adds roughly 2–5% of the disk footprint the
 model-level (`hiresTemp`) work already added, per domain.

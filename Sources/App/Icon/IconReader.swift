@@ -47,6 +47,14 @@ struct IconReader: GenericReaderDerived, GenericReaderProtocol {
             guard modelLevel.level >= 1, modelLevel.level <= nLevels else {
                 throw IconModelLevelError.levelOutOfRange(level: modelLevel.level, max: nLevels, domain: reader.domain.rawValue)
             }
+            if modelLevel.variable.isPrecipitatingHydrometeor,
+               reader.domain != .iconD2 || !IconModelLevelVariableType.iconD2HydrometeorLevels.contains(modelLevel.level) {
+                throw IconModelLevelError.hydrometeorNotPublished(
+                    variable: modelLevel.variable.rawValue,
+                    level: modelLevel.level,
+                    domain: reader.domain.rawValue
+                )
+            }
         }
         if case let .height(modelLevel) = raw {
             switch modelLevel.variable {
@@ -803,11 +811,15 @@ final class HhlColumnCache {
 
 enum IconModelLevelError: Error, CustomStringConvertible {
     case levelOutOfRange(level: Int, max: Int, domain: String)
+    /// qr/qs/qg are stored only on icon-d2 full levels 63...65. Any other model or level has no file.
+    case hydrometeorNotPublished(variable: String, level: Int, domain: String)
 
     var description: String {
         switch self {
         case .levelOutOfRange(let level, let max, let domain):
             return "Model level \(level) is out of range for domain '\(domain)' (valid 1...\(max))."
+        case .hydrometeorNotPublished(let variable, let level, let domain):
+            return "\(variable)_level\(level) is published only on icon-d2 full levels 63...65 (requested domain '\(domain)')."
         }
     }
 }

@@ -54,25 +54,32 @@ import OmFileFormat
 
     /// `hires-temp` is the unified model-level profile: every full level 1…N (top..surface)
     /// carrying exactly the eight full-level variables, plus vertical wind W on every half
-    /// level 1…N+1. Locks in the FL180-split removal.
+    /// level 1…N+1. Locks in the FL180-split removal. icon-d2 also stores rain, snow, and
+    /// graupel water on full levels 63…65.
     @Test func hiresTempCoversAllLevels() {
         let expectedFullVars: Set<IconModelLevelVariableType> = [
             .wind_u_component, .wind_v_component, .temperature, .specific_humidity, .pressure,
             .cloud_water, .cloud_ice, .cloud_cover
         ]
+        let hydrometeors: Set<IconModelLevelVariableType> = [.rain_water, .snow_water, .graupel_water]
         for domain in [IconDomains.iconD2, .iconEu, .icon] {
             let n = domain.numberOfModelFullLevels
             let nHalf = domain.numberOfModelHalfLevels
             let vars = DownloadIconCommand.VariableGroup.hiresTemp.variables(domain: domain)
             let levelVars = vars.compactMap { $0 as? IconModelLevelVariable }
+            let extra = domain == .iconD2 ? hydrometeors.count * IconModelLevelVariableType.iconD2HydrometeorLevels.count : 0
             // every selected variable is a model-level variable (no surface/pressure leakage)
             #expect(levelVars.count == vars.count)
-            #expect(levelVars.count == n * expectedFullVars.count + nHalf)
+            #expect(levelVars.count == n * expectedFullVars.count + nHalf + extra)
             let fullVars = levelVars.filter { !$0.variable.isHalfLevel }
             let halfVars = levelVars.filter { $0.variable.isHalfLevel }
             #expect(Set(fullVars.map { $0.level }) == Set(1...n))
             for level in 1...n {
-                #expect(Set(fullVars.filter { $0.level == level }.map { $0.variable }) == expectedFullVars)
+                var expected = expectedFullVars
+                if domain == .iconD2 && IconModelLevelVariableType.iconD2HydrometeorLevels.contains(level) {
+                    expected.formUnion(hydrometeors)
+                }
+                #expect(Set(fullVars.filter { $0.level == level }.map { $0.variable }) == expected)
             }
             // W: exactly one per half level 1…N+1
             #expect(halfVars.allSatisfy { $0.variable == .wind_w })
@@ -191,6 +198,33 @@ import OmFileFormat
         let msg = "\(IconHhlError.staticFileMissing(domain: "dwd_icon"))"
         #expect(msg.contains("hhl.om"))
         #expect(msg.contains("dwd_icon"))
+    }
+
+    /// qr/qs/qg outside icon-d2 levels 63…65 name the variable and the published range.
+    @Test func hydrometeorNotPublishedErrorIsDescriptive() {
+        let msg = "\(IconModelLevelError.hydrometeorNotPublished(variable: "rain_water", level: 60, domain: "icon-d2"))"
+        #expect(msg.contains("rain_water_level60"))
+        #expect(msg.contains("63...65"))
+        #expect(msg.contains("icon-d2"))
+    }
+
+    /// Rain, snow, and graupel content share cloud_water's g/kg packing and the DWD short names.
+    @Test func precipitatingHydrometeorsUseCloudWaterPacking() {
+        let cases: [(IconModelLevelVariable, String)] = [
+            (IconModelLevelVariable(variable: .rain_water, level: 65), "qr"),
+            (IconModelLevelVariable(variable: .snow_water, level: 64), "qs"),
+            (IconModelLevelVariable(variable: .graupel_water, level: 63), "qg")
+        ]
+        for (variable, dwdName) in cases {
+            #expect(variable.getVarAndLevel(domain: .iconD2)?.variable == dwdName)
+            #expect(variable.getVarAndLevel(domain: .iconD2)?.cat == "model-level")
+            #expect(variable.getVarAndLevel(domain: .iconD2)?.level == variable.level)
+            let stored = variable as any GenericVariable
+            #expect(stored.omFileCompression == .pfor_delta2d_int16_logarithmic)
+            #expect(stored.scalefactor == 30000)
+            #expect(stored.unit == .gramPerKilogram)
+            #expect(variable.multiplyAdd?.multiply == 1000)
+        }
     }
 
     /// Out-of-range model level surfaces a descriptive error (valid range stated) instead of silent NaN.

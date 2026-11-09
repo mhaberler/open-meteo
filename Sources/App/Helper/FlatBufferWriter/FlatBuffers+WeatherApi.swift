@@ -728,7 +728,7 @@ extension ForecastHeightOrModelLevelVariable: FlatBuffersVariable {
                 return .init(variable: .windDirection)
             case .dew_point:
                 return .init(variable: .dewPoint)
-            case .cloud_water, .cloud_ice:
+            case .cloud_water, .cloud_ice, .rain_water, .snow_water, .graupel_water:
                 return .init(variable: .undefined)
             case .cloud_cover:
                 return .init(variable: .cloudCover)
@@ -762,7 +762,7 @@ extension IconModelLevelVariable: FlatBuffersVariable {
             return .init(variable: .windDirection)
         case .dew_point:
             return .init(variable: .dewPoint)
-        case .cloud_water, .cloud_ice:
+        case .cloud_water, .cloud_ice, .rain_water, .snow_water, .graupel_water:
             return .init(variable: .undefined)
         case .cloud_cover:
             return .init(variable: .cloudCover)

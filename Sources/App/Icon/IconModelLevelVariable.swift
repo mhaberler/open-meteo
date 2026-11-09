@@ -26,11 +26,28 @@ enum IconModelLevelVariableType: String, CaseIterable, Sendable {
     case cloud_water
     case cloud_ice
     case cloud_cover
+    /// Specific rain content (qr), g/kg. Stored only on icon-d2 full levels 63...65.
+    case rain_water
+    /// Specific snow content (qs), g/kg. Stored only on icon-d2 full levels 63...65.
+    case snow_water
+    /// Specific graupel content (qg), g/kg. Stored only on icon-d2 full levels 63...65.
+    case graupel_water
+
+    /// Full levels that store precipitating hydrometeors. ICON-D2 only; see ADR 0002.
+    static let iconD2HydrometeorLevels: ClosedRange<Int> = 63...65
 
     /// Half-level variables (W, HHL heights): valid levels 1...nFull+1, one half step above full levels.
     var isHalfLevel: Bool {
         switch self {
         case .wind_w, .height_half, .height_half_agl: return true
+        default: return false
+        }
+    }
+
+    /// Rain, snow, and graupel content. Published by DWD on every full level; this checkout keeps the lowest three of icon-d2.
+    var isPrecipitatingHydrometeor: Bool {
+        switch self {
+        case .rain_water, .snow_water, .graupel_water: return true
         default: return false
         }
     }
@@ -65,7 +82,7 @@ struct IconModelLevelVariable: ModelLevelVariableRespresentable, IconVariableDow
         // x=1 elbow, so encoding is effectively linear here — precision is set by scalefactor alone.
         // Ceiling 10 g/kg (deep-convective qc headroom) → log10(11)≈1.04 → ~31200 (< INT16_MAX
         // 32767, reserved for NaN); near-zero step ≈ ln(10)/scalefactor ≈ 7.7e-8 kg/kg.
-        case .cloud_water, .cloud_ice: return 30000
+        case .cloud_water, .cloud_ice, .rain_water, .snow_water, .graupel_water: return 30000
         case .relative_humidity: return 1
         case .pressure: return 10
         case .wind_speed, .wind_direction, .dew_point: return 10
@@ -82,7 +99,7 @@ struct IconModelLevelVariable: ModelLevelVariableRespresentable, IconVariableDow
     /// gracefully instead of truncating. (Precedent: GloFas river_discharge.)
     var omFileCompression: OmCompressionType {
         switch variable {
-        case .specific_humidity, .cloud_water, .cloud_ice: return .pfor_delta2d_int16_logarithmic
+        case .specific_humidity, .cloud_water, .cloud_ice, .rain_water, .snow_water, .graupel_water: return .pfor_delta2d_int16_logarithmic
         default: return .pfor_delta2d_int16
         }
     }
@@ -92,7 +109,7 @@ struct IconModelLevelVariable: ModelLevelVariableRespresentable, IconVariableDow
         case .height, .height_agl, .height_half, .height_half_agl: return .linear
         case .wind_w: return .hermite(bounds: nil)
         case .wind_u_component, .wind_v_component, .temperature, .pressure: return .hermite(bounds: nil)
-        case .specific_humidity, .cloud_water, .cloud_ice: return .linear
+        case .specific_humidity, .cloud_water, .cloud_ice, .rain_water, .snow_water, .graupel_water: return .linear
         case .relative_humidity, .cloud_cover: return .hermite(bounds: 0...100)
         case .wind_speed, .dew_point: return .hermite(bounds: nil)
         case .wind_direction: return .linearDegrees
@@ -106,7 +123,7 @@ struct IconModelLevelVariable: ModelLevelVariableRespresentable, IconVariableDow
         case .wind_w: return .metrePerSecondNotUnitConverted
         case .wind_u_component, .wind_v_component: return .metrePerSecond
         case .temperature: return .celsius
-        case .specific_humidity, .cloud_water, .cloud_ice: return .gramPerKilogram
+        case .specific_humidity, .cloud_water, .cloud_ice, .rain_water, .snow_water, .graupel_water: return .gramPerKilogram
         case .relative_humidity, .cloud_cover: return .percentage
         case .pressure: return .hectopascal
         case .wind_speed: return .metrePerSecond
@@ -132,7 +149,7 @@ struct IconModelLevelVariable: ModelLevelVariableRespresentable, IconVariableDow
         switch variable {
         case .temperature:
             return (1, -273.15)
-        case .specific_humidity, .cloud_water, .cloud_ice:
+        case .specific_humidity, .cloud_water, .cloud_ice, .rain_water, .snow_water, .graupel_water:
             return (1000, 0)
         case .pressure:
             return (0.01, 0)
@@ -159,6 +176,12 @@ struct IconModelLevelVariable: ModelLevelVariableRespresentable, IconVariableDow
             return ("qc", "model-level", level)
         case .cloud_ice:
             return ("qi", "model-level", level)
+        case .rain_water:
+            return ("qr", "model-level", level)
+        case .snow_water:
+            return ("qs", "model-level", level)
+        case .graupel_water:
+            return ("qg", "model-level", level)
         case .cloud_cover:
             return ("clc", "model-level", level)
         case .relative_humidity:

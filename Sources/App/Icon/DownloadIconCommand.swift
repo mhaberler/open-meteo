@@ -67,7 +67,7 @@ struct DownloadIconCommand: AsyncCommand {
                     $0.getVarAndLevel(domain: domain)?.cat == "model-level"
                 }
             case .hiresTemp:
-                return (1...domain.numberOfModelFullLevels).reversed().flatMap { level in
+                let profile: [any IconVariableDownloadable] = (1...domain.numberOfModelFullLevels).reversed().flatMap { level in
                     [
                         IconModelLevelVariable(variable: .wind_u_component, level: level),
                         IconModelLevelVariable(variable: .wind_v_component, level: level),
@@ -82,6 +82,18 @@ struct DownloadIconCommand: AsyncCommand {
                     // W is on half levels (1...nFull+1)
                     IconModelLevelVariable(variable: .wind_w, level: level)
                 }
+                // qr/qs/qg on the lowest three full levels. icon-d2 only; see ADR 0002.
+                guard domain == .iconD2 else {
+                    return profile
+                }
+                let hydrometeors: [any IconVariableDownloadable] = IconModelLevelVariableType.iconD2HydrometeorLevels.reversed().flatMap { level in
+                    [
+                        IconModelLevelVariable(variable: .rain_water, level: level),
+                        IconModelLevelVariable(variable: .snow_water, level: level),
+                        IconModelLevelVariable(variable: .graupel_water, level: level)
+                    ]
+                }
+                return profile + hydrometeors
             case .heidiVars:
                 // dewpoint_2m, wet_bulb_temperature_2m are derived on read from
                 // temperature_2m/relative_humidity_2m below; no raw download needed.
