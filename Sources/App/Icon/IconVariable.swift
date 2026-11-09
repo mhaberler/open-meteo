@@ -228,7 +228,7 @@ enum IconSurfaceVariable: String, CaseIterable, GenericVariableMixable, Sendable
         case .cloud_cover_high: return 1
         case .convective_cloud_top: return 0.1
         case .convective_cloud_base: return 0.1
-        case .precipitation: return 10
+        case .precipitation: return 100 // 0.01 mm; int16 saturates at 327.67 mm per step
         case .weather_code: return 1
         case .wind_v_component_10m: return 10
         case .wind_u_component_10m: return 10
@@ -255,11 +255,11 @@ enum IconSurfaceVariable: String, CaseIterable, GenericVariableMixable, Sendable
         case .relative_humidity_2m: return 1
         case .diffuse_radiation: return 1
         case .direct_radiation: return 1
-        case .showers: return 10
-        case .rain: return 10
+        case .showers: return 100
+        case .rain: return 100
         case .pressure_msl: return 10
         case .snowfall_convective_water_equivalent: return 10
-        case .snowfall_water_equivalent: return 10
+        case .snowfall_water_equivalent: return 100
         case .temperature_80m, .temperature_120m, .temperature_180m:
             return 10
         case .cape:
@@ -520,7 +520,7 @@ enum DwdIconEpsGlobalVariable: String, Hashable, GenericVariable {
     
     var scalefactor: Float {
         switch self {
-        case .precipitation: return 10
+        case .precipitation: return 100
         case .pressure_msl: return 10
         case .temperature_2m: return 20
         case .cloud_cover:
@@ -613,8 +613,8 @@ enum DwdIconEuEpsGlobalVariable: String, Hashable, GenericVariable {
 
     var scalefactor: Float {
         switch self {
-        case .precipitation: return 10
-        case .snowfall_water_equivalent: return 10
+        case .precipitation: return 100
+        case .snowfall_water_equivalent: return 100
         case .pressure_msl: return 10
         case .temperature_2m: return 20
         case .temperature_80m: return 10
@@ -734,10 +734,10 @@ enum DwdIconD2EpsGlobalVariable: String, Hashable, GenericVariable {
 
     var scalefactor: Float {
         switch self {
-        case .precipitation: return 10
-        case .rain: return 10
-        case .showers: return 10
-        case .snowfall_water_equivalent: return 10
+        case .precipitation: return 100
+        case .rain: return 100
+        case .showers: return 100
+        case .snowfall_water_equivalent: return 100
         case .snow_depth: return 100
         case .pressure_msl: return 10
         case .temperature_2m: return 20

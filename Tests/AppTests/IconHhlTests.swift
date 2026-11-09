@@ -176,6 +176,20 @@ import OmFileFormat
         #expect(msg.contains("icon-d2-native"))
     }
 
+    /// 0.01 mm storage. Convective snowfall is added into the stored field and keeps its own factor.
+    @Test func precipitationStoresHundredthsOfAMillimetre() {
+        for variable in [IconSurfaceVariable.precipitation, .rain, .showers, .snowfall_water_equivalent] {
+            #expect(variable.scalefactor == 100)
+        }
+        for variable in [DwdIconD2EpsGlobalVariable.precipitation, .rain, .showers, .snowfall_water_equivalent] {
+            #expect(variable.scalefactor == 100)
+        }
+        #expect(DwdIconEuEpsGlobalVariable.precipitation.scalefactor == 100)
+        #expect(DwdIconEuEpsGlobalVariable.snowfall_water_equivalent.scalefactor == 100)
+        #expect(DwdIconEpsGlobalVariable.precipitation.scalefactor == 100)
+        #expect(IconSurfaceVariable.snowfall_convective_water_equivalent.scalefactor == 10)
+    }
+
     @Test func specificHumidityUsesLogarithmicCompression() {
         let qv: any GenericVariable = IconModelLevelVariable(variable: .specific_humidity, level: 60)
         let water: any GenericVariable = IconModelLevelVariable(variable: .cloud_water, level: 60)
