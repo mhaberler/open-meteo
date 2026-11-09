@@ -35,7 +35,7 @@ A line looks like:
 Two other lines stay in the same file:
 
 - `5 * * * *` deletes `chunk_*` files under `${DATA_DIRECTORY}/dwd*` that are older than 15 days.
-- `20 2 * * *` runs `dashboard/cleanup.py` as `mah`. That drops finished ingest-phase rows and disk samples older than 14 days (`RETENTION_DAYS` in `dashboard/phases.py`). The comment in the crontab that says 7 days is stale.
+- `20 2 * * *` runs `/home/mah/src/dashboard/cleanup.py` as `mah`. That drops finished ingest-phase rows and disk samples older than 14 days (`RETENTION_DAYS` in `/home/mah/src/dashboard/phases.py`). The comment in the crontab that says 7 days is stale.
 
 The previous `> log 2>&1 || cat log` lines are commented out in the crontab. Do not bring them back: a failed log was overwritten by the next run, and a `%` in a `date` format inside the crontab is turned into a newline.
 
