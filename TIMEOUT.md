@@ -12,7 +12,7 @@ DWD has no outage that matches the 9–10 October logs. The 6 October 2026 grid 
 
 1. `download` accepts `--connections-per-host`. It sets `concurrentHTTP1ConnectionsPerHostSoftLimit` on `dedicatedHttpClient` for that process. Omitted, the limit stays 8. `http1Client` is unchanged.
 
-2. Run one `hiresTemp` job at a time. A limit of 32 per process is 96 connections to DWD while the three domains overlap, which stretches the 5-minute read timeout. Leave the `heidiVars` minutes as they are.
+2. Run one `hiresTemp` job at a time. A limit of 32 per process is 96 connections to DWD while the three domains overlap, which stretches the 5-minute read timeout. The live heidiVars minutes are later, so each run finishes with its model-level run. icon-d2 and icon-eu overlap only the last few minutes of that download. Icon heidiVars on 00/12Z falls in the convert. heidiVars does not take the `flock` proposed below.
 
 3. `download` accepts `--deadline-hours` (whole hours). It overrides the Curl deadline for surface elevation, HHL, and the GRIB download. `Process.alarm` stays one hour past that value. Omitted, icon-d2 and icon-d2-eps stay at 2 hours and the other ICON domains stay at 5.
 
@@ -22,7 +22,7 @@ DWD has no outage that matches the 9–10 October logs. The 6 October 2026 grid 
 
 `/usr/local/bin/openmeteo-api` does not accept these flags yet. Install the `fix-timeouts` binary before editing the crontab. A flag the binary does not know makes the job exit immediately.
 
-Leave the `heidiVars` lines, the cleanup lines, and the commented history as they are. Replace the three `hiresTemp` lines:
+Leave the cleanup lines and the commented history as they are. The live heidiVars minutes are the ones in `INSTALL.md`; do not move them back. This `flock` block is not installed. Replace the three `hiresTemp` lines:
 
 ```cron
 48 0,3,6,9,12,15,18,21 * * * openmeteo-api flock -n -E 0 /open-meteo/log/hiresTemp.lock /usr/local/bin/ingest-wrap icon-eu_model-level.log nice -17 /usr/local/bin/openmeteo-api download icon-eu --update-meta --group hiresTemp --concurrent 32 --connections-per-host 32

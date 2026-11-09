@@ -17,17 +17,17 @@ The six download jobs run as `openmeteo-api` through `/usr/local/bin/ingest-wrap
 
 | Job | Minute | UTC hours | nice |
 |---|---|---|---|
-| icon-d2 heidiVars | 45 | 1,4,7,10,13,16,19,22 | -15 |
+| icon-d2 heidiVars | 3 | 2,5,8,11,14,17,20,23 | -15 |
 | icon-d2 model-level (`hiresTemp`, `--update-meta`) | 53 | 1,4,7,10,13,16,19,22 | -15 |
-| icon-eu heidiVars | 40 | 0,3,6,9,12,15,18,21 | -17 |
+| icon-eu heidiVars | 55 | 0,3,6,9,12,15,18,21 | -17 |
 | icon-eu model-level (`hiresTemp`, `--update-meta`) | 48 | 0,3,6,9,12,15,18,21 | -17 |
-| icon global heidiVars | 50 | 0,6,12,18 | |
+| icon global heidiVars | 57 | 1,7,13,19 | |
 | icon global model-level (`hiresTemp`, `--update-meta`) | 57 | 0,6,12,18 | |
 
 A line looks like:
 
 ```cron
-45 1,4,7,10,13,16,19,22 * * * openmeteo-api /usr/local/bin/ingest-wrap icon-d2_heidivars.log nice -15 /usr/local/bin/openmeteo-api download icon-d2 --group heidiVars --concurrent 32
+3 2,5,8,11,14,17,20,23 * * * openmeteo-api /usr/local/bin/ingest-wrap icon-d2_heidivars.log nice -15 /usr/local/bin/openmeteo-api download icon-d2 --group heidiVars --concurrent 32
 ```
 
 `ingest-wrap LOGNAME COMMAND...` truncates `$DATA_DIRECTORY/log/LOGNAME` in place, then runs `COMMAND` with stdout and stderr appended. The dashboard watcher tails those six names and treats a shrink as a new run, so the live path must stay stable. A non-zero exit copies the full log to `/open-meteo/log/failed/<name>.YYYYMMDDTHHMMSSZ.log`, prints the last 200 lines (cron mails that), and exits with the same status. A zero exit prints nothing. Copies older than 14 days are deleted. The wrapper lives at `/usr/local/bin/ingest-wrap`. `build/ingest-wrap` in this repo is a copy.
