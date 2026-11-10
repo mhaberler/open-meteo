@@ -16,6 +16,12 @@ _Avoid_: ingest
 The part of a run that writes the archive after the download. The chart stores this phase as `process`.
 _Avoid_: process, ingest
 
+## Surface water
+
+**Precipitation**:
+Surface water depth in millimetres over a quarter-hour or an hour.
+_Avoid_: rain, rain water
+
 ## Hydrometeor content
 
 **Rain water**:

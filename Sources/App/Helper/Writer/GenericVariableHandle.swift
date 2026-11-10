@@ -438,11 +438,12 @@ actor GribDeaverager {
         self.data = data
     }
     
-    /// Returns false if step should be skipped
-    func deaccumulateIfRequired<V: Hashable>(variable: V, member: Int, stepType: String, stepRange: String, array2d: inout Array2D) async -> Bool {
+    /// Returns false if step should be skipped.
+    /// `startStep` and `currentStep` must share one unit for the whole variable/member stream.
+    func deaccumulateIfRequired<V: Hashable>(variable: V, member: Int, stepType: String, startStep: Int, currentStep: Int, array2d: inout Array2D) async -> Bool {
         // Deaccumulate precipitation
         if stepType == "accum" {
-            guard let (startStep, currentStep) = stepRange.splitTo2Integer(), startStep != currentStep else {
+            guard startStep != currentStep else {
                 return false
             }
             // Store data for next timestep
@@ -457,21 +458,32 @@ actor GribDeaverager {
 
         // Deaverage data
         if stepType == "avg" {
-            guard let (startStep, currentStep) = stepRange.splitTo2Integer(), startStep != currentStep else {
+            guard startStep != currentStep else {
                 return false
             }
             // Store data for next timestep
             let previous = set(variable: variable, member: member, step: currentStep, data: array2d.data)
             // For the overall first timestep or the first step of each repeating section, deaveraging is not required
             if let previous, previous.step != startStep, currentStep > previous.step {
-                let deltaHours = Float(currentStep - startStep)
-                let deltaHoursPrevious = Float(previous.step - startStep)
+                let delta = Float(currentStep - startStep)
+                let deltaPrevious = Float(previous.step - startStep)
                 for l in previous.data.indices {
-                    array2d.data[l] = (array2d.data[l] * deltaHours - previous.data[l] * deltaHoursPrevious) / (deltaHours - deltaHoursPrevious)
+                    array2d.data[l] = (array2d.data[l] * delta - previous.data[l] * deltaPrevious) / (delta - deltaPrevious)
                 }
             }
         }
 
+        return true
+    }
+
+    /// Returns false if step should be skipped
+    func deaccumulateIfRequired<V: Hashable>(variable: V, member: Int, stepType: String, stepRange: String, array2d: inout Array2D) async -> Bool {
+        if stepType == "accum" || stepType == "avg" {
+            guard let (startStep, currentStep) = stepRange.splitTo2Integer() else {
+                return false
+            }
+            return await deaccumulateIfRequired(variable: variable, member: member, stepType: stepType, startStep: startStep, currentStep: currentStep, array2d: &array2d)
+        }
         return true
     }
 

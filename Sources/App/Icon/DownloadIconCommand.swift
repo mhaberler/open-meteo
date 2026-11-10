@@ -453,19 +453,20 @@ struct DownloadIconCommand: AsyncCommand {
 
                 var messages = try await cdo.downloadAndRemap(url)
                 if domain == .iconD2 && messages.count > 1 {
-                    // Write 15min D2 icon data
-                    for (i, (message, array2d)) in messages.enumerated() {
+                    // Write 15min D2 icon data. Quarter-hour messages use minute step units
+                    // (`0m-315m`) after an hour-unit message (`0-5`). Compare both in seconds.
+                    for (message, array2d) in messages {
                         var array2d = array2d
-                        guard let stepRange = message.get(attribute: "stepRange"),
-                              let stepType = message.get(attribute: "stepType") else {
-                            fatalError("could not get step range or type")
+                        let step = try IconStepInterval(message)
+                        guard let stepType = message.get(attribute: "stepType") else {
+                            fatalError("could not get step type")
                         }
-                        let timestamp = run.add(hour * 3600 + i * 900)
+                        let timestamp = try message.getValidTimestamp()
                         if let fma = variable.multiplyAdd {
                             array2d.data.multiplyAdd(multiply: fma.multiply, add: fma.add)
                         }
                         // Deaccumulate precipitation
-                        guard await deaverager15min.deaccumulateIfRequired(variable: variable, member: 0, stepType: stepType, stepRange: stepRange, array2d: &array2d) else {
+                        guard await deaverager15min.deaccumulateIfRequired(variable: variable, member: 0, stepType: stepType, startStep: step.start, currentStep: step.end, array2d: &array2d) else {
                             continue
                         }
                         if let variable = variable as? IconSurfaceVariable {
